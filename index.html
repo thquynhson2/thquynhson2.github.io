@@ -1786,5 +1786,181 @@ function webSendWatch(){
 }
 window.addEventListener("beforeunload", function(e){ if(window.SYNC && SYNC.queued()){ e.preventDefault(); e.returnValue = ""; } });
 </script>
+<script>/*KHOAMA*/
+/* ===== LƯU TRỮ MÃ & KHOÁ MÃ (chèn vào trang kiểm tra / luyện tập) =====
+   - Mọi mã đã tạo được lưu lâu dài trên máy giáo viên (không còn tự mất sau 1 ngày) và trên máy chủ (trang MaKiemTra).
+   - Mã tự khoá khi cả lớp đã làm, giáo viên khoá/mở bằng tay, hết ngày tạo thì mã tự hết hiệu lực.
+   - Học sinh nhập mã đã khoá sẽ không vào được. Giáo viên tìm mã cũ để xem lại kết quả. */
+(function(){
+  if(typeof KCODES === "undefined" || !document.getElementById("tCodes")) return;
+  var KIND = /makiemtra/.test(KCODES) ? "kt" : "lt", PRE = KIND === "lt" ? "L" : "";
+  var KARCH = KCODES + "_luutru";
+  var KM = { srv: {}, stu: {}, q: "", f: "", lim: 40, busy: false, t: 0 };
+  function six(c){ return ("000000" + c).slice(-6); }
+  function today(){ return dayKey(); }
+  function base(){ var c = (window.SYNC && SYNC.candidates) ? SYNC.candidates() : []; return c && c.length ? Promise.resolve(c[0]) : Promise.resolve(""); }
+  function isWeb(u){ return /script\.google/.test(u); }
+  function apiUrl(u, api, q){ return isWeb(u) ? u + "?api=" + api + (q ? "&" + q : "") : u + "/api/" + api + (q ? "?" + q : ""); }
+  function key(){ try{ return typeof webKey === "function" ? webKey() : ""; }catch(e){ return ""; } }
+  function withKey(u, url){ return isWeb(u) && key() ? url + "&key=" + encodeURIComponent(key()) : url; }
+  function fmtDk(dk){ dk = String(dk); return dk.slice(6, 8) + "/" + dk.slice(4, 6) + "/" + dk.slice(0, 4); }
+  function prettyKhoa(s){
+    s = String(s || ""); var m;
+    if((m = /^auto:(\d+)\/(\d+):(.*)$/.exec(s))) return "Tự khoá – cả lớp đã làm (" + m[1] + "/" + m[2] + ") lúc " + m[3];
+    if((m = /^gv:(.*)$/.exec(s))) return "Giáo viên khoá lúc " + m[1];
+    return s;
+  }
+
+  /* ---- 1. lưu trữ mã lâu dài: mọi lần ghi danh sách mã đều gộp vào kho lưu trữ ---- */
+  function arch(){ return sget(KARCH, []); }
+  function archMerge(list){
+    var a = arch(), idx = {}, ch = false;
+    a.forEach(function(x, i){ idx[x.code + "|" + x.dk] = i; });
+    (list || []).forEach(function(x){
+      if(!x || x.code == null || !x.dk) return;
+      var k = x.code + "|" + x.dk;
+      if(idx[k] == null){ a.push(x); idx[k] = a.length - 1; ch = true; }
+      else { var o = a[idx[k]], n = Object.assign({}, o, x); if(JSON.stringify(n) !== JSON.stringify(o)){ a[idx[k]] = n; ch = true; } }
+    });
+    if(ch) _ss(KARCH, a);
+  }
+  var _ss = sset;
+  sset = function(k, v){ var r = _ss(k, v); if(k === KCODES && Array.isArray(v)) archMerge(v); return r; };
+  archMerge(sget(KCODES, []));
+
+  /* ---- 2. trạng thái khoá từ máy chủ ---- */
+  function loadSrv(force){
+    if(KM.busy || (!force && Date.now() - KM.t < 20000)) return Promise.resolve(false);
+    KM.busy = true;
+    return base().then(function(u){
+      if(!u) throw 0;
+      if(isWeb(u) && !key()) throw 0;
+      return fetch(withKey(u, apiUrl(u, "khoa", isWeb(u) ? "" : "")), { cache: "no-store" }).then(function(r){ return r.json(); });
+    }).then(function(d){
+      KM.t = Date.now();
+      if(!d || !d.ma) return false;
+      var add = [];
+      d.ma.forEach(function(x){
+        var ma = String(x.ma || "");
+        if(PRE ? ma.charAt(0) !== "L" : !/^\d{6}$/.test(ma)) return;
+        var cfg = x.cfg || {}, dkx = +(x.dk || cfg.dk || 0), code = +ma.replace(/\D/g, "");
+        if(x.de || cfg.de) return;                       /* mã đề định kỳ: xem ở trang định kỳ */
+        KM.srv[six(code)] = { khoa: x.khoa || "", lam: +x.lam || 0, si: +x.si || 0 };
+        if(dkx){ var r = null; try{ r = readCode(code, dkx); }catch(e){}
+          if(r) add.push({ code: code, lop: r.lop, key: r.key, label: r.label, dk: dkx, t: x.t || cfg.t || "", tg: +(x.tg || cfg.tg) || undefined, vpmax: +(x.vp || cfg.vp) || undefined, srv: 1 }); }
+      });
+      archMerge(add);
+      return true;
+    }).catch(function(){ KM.t = Date.now(); return false; }).then(function(ok){ KM.busy = false; return ok; });
+  }
+  function setKhoa(x, on){
+    return base().then(function(u){
+      if(!u) throw new Error("net");
+      return fetch(withKey(u, apiUrl(u, "khoa", isWeb(u) ? "x=1" : "")), { method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" },
+        body: JSON.stringify({ ma: PRE + six(x.code), khoa: !!on, lop: x.lop, dk: x.dk, tg: x.tg, vp: x.vpmax }) }).then(function(r){ return r.json(); });
+    }).then(function(d){
+      if(!d || !d.ok) throw new Error(d && d.err || "save");
+      var s = KM.srv[six(x.code)] = KM.srv[six(x.code)] || {};
+      s.khoa = on ? "gv:" + new Date().toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" }) + " " + new Date().toLocaleDateString("vi-VN") : "";
+      toast(on ? "🔒 Đã khoá mã " + fmtCode(x.code) + ". Học sinh không vào được mã này nữa." : "🔓 Đã mở khoá mã " + fmtCode(x.code) + ".");
+      renderCodes();
+    }).catch(function(e){ toast(e && e.message === "key" ? "🔒 Chưa khoá được: cần nhập đúng mã bí mật giáo viên." : "⚠️ Chưa kết nối được máy chủ – chưa khoá/mở được mã."); });
+  }
+
+  /* ---- 3. bảng mã: tất cả các mã, có tìm kiếm, trạng thái, khoá/mở ---- */
+  var h3 = document.getElementById("tCodes").closest("div").previousElementSibling;
+  if(h3 && /Mã đã tạo/.test(h3.textContent)) h3.textContent = "Các mã đã tạo (lưu lâu dài – tìm lại mã cũ để xem kết quả)";
+  var bar = document.createElement("div");
+  bar.style.cssText = "display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:4px 0 8px";
+  bar.innerHTML = '<input id="kmQ" placeholder="🔍 Tìm theo mã hoặc lớp…" style="flex:1;min-width:180px;padding:8px 10px;border:1px solid #c9d6e3;border-radius:10px;font:inherit">'
+    + '<select id="kmF" style="padding:8px;border:1px solid #c9d6e3;border-radius:10px;font:inherit"><option value="">Tất cả</option><option value="mo">🟢 Đang mở</option><option value="khoa">🔒 Đã khoá / hết ngày</option><option value="nay">Hôm nay</option></select>'
+    + '<button class="btn" id="kmR" type="button">🔄 Cập nhật trạng thái</button>';
+  document.getElementById("tCodes").closest("div").insertAdjacentElement("beforebegin", bar);
+  document.getElementById("kmQ").addEventListener("input", function(){ KM.q = this.value.trim(); KM.lim = 40; renderCodes(); });
+  document.getElementById("kmF").addEventListener("change", function(){ KM.f = this.value; KM.lim = 40; renderCodes(); });
+  document.getElementById("kmR").addEventListener("click", function(){ loadSrv(true).then(renderCodes); });
+
+  function stateOf(x){
+    var s = KM.srv[six(x.code)] || {};
+    if(s.khoa) return { lock: true, can: x.dk === today(), txt: "🔒 " + prettyKhoa(s.khoa) };
+    if(x.dk !== today()) return { lock: true, can: false, txt: "🔒 Hết ngày (mã chỉ dùng trong ngày tạo)" };
+    return { lock: false, can: true, txt: "🟢 Đang mở" };
+  }
+  renderCodes = function(){
+    var all = arch().slice().sort(function(a, b){ return (b.dk - a.dk) || String(b.t || "").localeCompare(String(a.t || "")); });
+    var cnt = {};
+    try{ sessions().forEach(function(s){ if(s.mabai){ cnt[s.mabai] = cnt[s.mabai] || {}; cnt[s.mabai][s.stt] = 1; } }); }catch(e){}
+    var q = KM.q.replace(/\s+/g, "").toUpperCase();
+    var list = all.filter(function(x){
+      var st = stateOf(x);
+      if(KM.f === "mo" && st.lock) return false;
+      if(KM.f === "khoa" && !st.lock) return false;
+      if(KM.f === "nay" && x.dk !== today()) return false;
+      if(q && six(x.code).indexOf(q) < 0 && String(x.lop).toUpperCase().indexOf(q) < 0) return false;
+      return true;
+    });
+    var kt = KIND === "kt";
+    var h = '<tr><th>Mã</th><th>Lớp</th><th>Bài</th><th>Ngày tạo</th>' + (kt ? '<th class="num">Thời gian</th>' : '') + '<th class="num">Đã làm</th><th>Trạng thái</th><th></th></tr>';
+    h += list.slice(0, KM.lim).map(function(x){
+      var k = six(x.code), st = stateOf(x), s = KM.srv[k] || {}, local = Object.keys(cnt[k] || {}).length;
+      var lam = s.si ? Math.max(s.lam || 0, local) + "/" + s.si : (s.lam || local);
+      return '<tr' + (st.lock ? ' style="opacity:.75"' : '') + '><td style="white-space:nowrap"><b style="font-size:18px;letter-spacing:2px">' + fmtCode(x.code) + '</b></td><td>' + esc(x.lop) + '</td><td>' + esc(x.label || "") + '</td><td>' + fmtDk(x.dk) + (x.t ? " " + (fmtT(x.t).split(" ")[1] || "") : "") + '</td>'
+        + (kt ? '<td class="num">' + (x.tg ? '<b>' + x.tg + '</b> phút' : '') + '</td>' : '')
+        + '<td class="num">' + lam + '</td><td style="font-size:13px">' + esc(st.txt) + '</td><td style="white-space:nowrap">'
+        + (st.lock ? '' : '<button class="btn" data-show="' + x.code + '" data-l="' + esc(x.lop) + ' · ' + esc(x.label || "") + '">Chiếu</button> ')
+        + (st.can ? '<button class="btn" data-kmk="' + x.code + '|' + x.dk + '|' + (st.lock ? 0 : 1) + '">' + (st.lock ? '🔓 Mở khoá' : '🔒 Khoá') + '</button> ' : '')
+        + '<button class="btn" data-rep="' + k + '">Xem kết quả</button></td></tr>';
+    }).join("");
+    if(!list.length) h += '<tr><td colspan="8" class="muted">' + (all.length ? "Không có mã phù hợp." : "Chưa tạo mã nào.") + '</td></tr>';
+    if(list.length > KM.lim) h += '<tr><td colspan="8" style="text-align:center"><button class="btn" id="kmMore" type="button">Xem thêm ' + (list.length - KM.lim) + ' mã…</button></td></tr>';
+    $("tCodes").innerHTML = h;
+    loadSrv(false).then(function(ok){ if(ok) renderCodes(); });
+  };
+  document.addEventListener("click", function(e){
+    var b = e.target.closest("[data-kmk],#kmMore"); if(!b) return;
+    if(b.id === "kmMore"){ KM.lim += 40; renderCodes(); return; }
+    var p = b.dataset.kmk.split("|"), x = arch().filter(function(y){ return String(y.code) === p[0] && String(y.dk) === p[1]; })[0];
+    if(!x) return;
+    if(p[2] === "1" && !confirm("Khoá mã " + fmtCode(x.code) + " (lớp " + x.lop + ")? Học sinh sẽ không vào được mã này nữa. Kết quả đã làm vẫn được giữ.")) return;
+    setKhoa(x, p[2] === "1");
+  });
+  /* xem kết quả mã cũ: thêm mã vào bộ lọc nếu chưa có */
+  document.addEventListener("click", function(e){
+    var r = e.target.closest("[data-rep]"); if(!r) return;
+    var sel = $("fMa"); if(!sel) return;
+    if(![].some.call(sel.options, function(o){ return o.value === r.dataset.rep; })){
+      var o = document.createElement("option"); o.value = r.dataset.rep; o.textContent = fmtCode(+r.dataset.rep) + " (chưa có kết quả)"; sel.appendChild(o);
+    }
+  }, true);
+
+  /* ---- 4. học sinh: mã đã khoá thì không vào được ---- */
+  function curCode(){ var el = $("inCode"); return el ? el.value.replace(/\D/g, "") : ""; }
+  function lockedNow(){ var c = curCode(); return c.length === 6 && KM.stu[c]; }
+  function showLock(){
+    var c = curCode(), why = KM.stu[c]; if(!why) return;
+    var info = $("codeInfo"); if(info){ info.className = "codeinfo no"; info.textContent = "🔒 Mã " + fmtCode(+c) + " đã khoá (" + prettyKhoa(why) + "). Em hỏi thầy cô mã mới nhé."; }
+    var bj = $("btnJoin"); if(bj) bj.disabled = true;
+    ["pick2", "stt2Box", "tenBox"].forEach(function(id){ var el = $(id); if(el) el.classList.add("hide"); });
+  }
+  function checkLock(c){
+    if(KM.stu[c] !== undefined){ if(KM.stu[c]) showLock(); return; }
+    KM.stu[c] = "";
+    base().then(function(u){ if(!u) throw 0; return fetch(apiUrl(u, "de", "ma=" + PRE + c), { cache: "no-store" }).then(function(r){ return r.json(); }); })
+      .then(function(d){ if(d && d.khoa){ KM.stu[c] = d.khoa; if(curCode() === c) showLock(); } })
+      .catch(function(){ delete KM.stu[c]; });
+  }
+  if(typeof checkJoin === "function"){
+    var _cj = checkJoin;
+    checkJoin = function(){ var r = _cj.apply(this, arguments); var c = curCode(); if(c.length === 6 && typeof JOIN !== "undefined" && JOIN){ if(KM.stu[c]) showLock(); else checkLock(c); } return r; };
+    for(var k in _cj) checkJoin[k] = _cj[k];
+  }
+  if(typeof joinReady === "function"){ var _jr = joinReady; joinReady = function(){ _jr.apply(this, arguments); if(lockedNow()) $("btnJoin").disabled = true; }; }
+  window.addEventListener("click", function(e){
+    if(!e.target.closest || !e.target.closest("#btnJoin")) return;
+    if(lockedNow()){ e.stopPropagation(); e.preventDefault(); showLock(); toast("🔒 Mã này đã khoá."); }
+  }, true);
+  var inC = $("inCode"); if(inC) inC.addEventListener("input", function(){ var c = curCode(); if(c.length === 6 && KM.stu[c] === "") delete KM.stu[c]; });
+})();
+</script>
 </body>
 </html>
