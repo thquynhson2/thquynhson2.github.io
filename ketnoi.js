@@ -1,2 +1,1 @@
-/* Địa chỉ Google Apps Script nhận kết quả (Ứng dụng web, kết thúc bằng /exec). Dán địa chỉ của thầy vào giữa hai dấu ngoặc kép. */
-window.WEBAPI = "";
+window.WEBAPI = "https://script.google.com/macros/s/AKfycbwyVXZtBxOdEExxC28Qo2afOxTiNeBF7r7yKyEU-h6EtpVl9Z_RsCQaFZ51l_WBbJDjhQ/exec";
