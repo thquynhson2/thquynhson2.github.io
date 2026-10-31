@@ -1809,11 +1809,13 @@ window.addEventListener("beforeunload", function(e){ if(window.SYNC && SYNC.queu
     s = String(s || ""); var m;
     if((m = /^auto:(\d+)\/(\d+):(.*)$/.exec(s))) return "Tự khoá – cả lớp đã làm (" + m[1] + "/" + m[2] + ") lúc " + m[3];
     if((m = /^gv:(.*)$/.exec(s))) return "Giáo viên khoá lúc " + m[1];
+    if(s === "xoa") return "Mã đã bị giáo viên xoá";
     return s;
   }
 
   /* ---- 1. lưu trữ mã lâu dài: mọi lần ghi danh sách mã đều gộp vào kho lưu trữ ---- */
-  function arch(){ return sget(KARCH, []); }
+  var MEMARCH = null;   /* giữ trong bộ nhớ trang, phòng khi bộ nhớ trình duyệt đã đầy */
+  function arch(){ return (MEMARCH || sget(KARCH, [])).slice(); }
   function archMerge(list){
     var a = arch(), idx = {}, ch = false;
     a.forEach(function(x, i){ idx[x.code + "|" + x.dk] = i; });
@@ -1823,7 +1825,7 @@ window.addEventListener("beforeunload", function(e){ if(window.SYNC && SYNC.queu
       if(idx[k] == null){ a.push(x); idx[k] = a.length - 1; ch = true; }
       else { var o = a[idx[k]], n = Object.assign({}, o, x); if(JSON.stringify(n) !== JSON.stringify(o)){ a[idx[k]] = n; ch = true; } }
     });
-    if(ch) _ss(KARCH, a);
+    if(ch || !MEMARCH){ MEMARCH = a.slice(); _ss(KARCH, a); }
   }
   var _ss = sset;
   sset = function(k, v){ var r = _ss(k, v); if(k === KCODES && Array.isArray(v)) archMerge(v); return r; };
@@ -1851,6 +1853,7 @@ window.addEventListener("beforeunload", function(e){ if(window.SYNC && SYNC.queu
           if(r) add.push({ code: code, lop: r.lop, key: r.key, label: r.label, dk: dkx, t: x.t || cfg.t || "", tg: +(x.tg || cfg.tg) || undefined, vpmax: +(x.vp || cfg.vp) || undefined, srv: 1 }); }
       });
       archMerge(add);
+      (d.xoa || []).forEach(function(z){ apXoa(String(z.ma), +z.dk || 0, z.luc || ""); });
       return true;
     }).catch(function(){ KM.t = Date.now(); return false; }).then(function(ok){ KM.busy = false; return ok; });
   }
@@ -1910,13 +1913,13 @@ window.addEventListener("beforeunload", function(e){ if(window.SYNC && SYNC.queu
         + '<td class="num">' + lam + '</td><td style="font-size:13px">' + esc(st.txt) + '</td><td style="white-space:nowrap">'
         + (st.lock ? '' : '<button class="btn" data-show="' + x.code + '" data-l="' + esc(x.lop) + ' · ' + esc(x.label || "") + '">Chiếu</button> ')
         + (st.can ? '<button class="btn" data-kmk="' + x.code + '|' + x.dk + '|' + (st.lock ? 0 : 1) + '">' + (st.lock ? '🔓 Mở khoá' : '🔒 Khoá') + '</button> ' : '')
-        + '<button class="btn" data-rep="' + k + '">Xem kết quả</button>'
+        + '<button class="btn" data-rep="' + k + '">Xem kết quả</button> <button class="btn" data-kmx="' + x.code + '|' + x.dk + '" title="Xoá mã tạo thừa/nhầm cùng toàn bộ bài làm của mã" style="color:#c62828">🗑️ Xoá</button>'
         + (KIND === "kt" ? ' <button class="btn" data-redo="' + k + '" title="Mã cho học sinh làm lại bài của mã này">🔑 Mã làm lại</button>' : '') + '</td></tr>';
     }).join("");
     if(!list.length) h += '<tr><td colspan="8" class="muted">' + (all.length ? "Không có mã phù hợp." : "Chưa tạo mã nào.") + '</td></tr>';
     if(list.length > KM.lim) h += '<tr><td colspan="8" style="text-align:center"><button class="btn" id="kmMore" type="button">Xem thêm ' + (list.length - KM.lim) + ' mã…</button></td></tr>';
     $("tCodes").innerHTML = h;
-    loadSrv(false).then(function(ok){ if(ok) renderCodes(); });
+    loadSrv(false).then(function(ok){ if(ok){ if(KM.dirty){ KM.dirty = false; refreshAll(); } else renderCodes(); } });
   };
   document.addEventListener("click", function(e){
     var b = e.target.closest("[data-kmk],#kmMore"); if(!b) return;
@@ -1935,12 +1938,71 @@ window.addEventListener("beforeunload", function(e){ if(window.SYNC && SYNC.queu
     }
   }, true);
 
+  /* ---- XOÁ MÃ: xoá mã tạo thừa/nhầm cùng bài làm (máy chủ chuyển sang trang DaXoa, khôi phục được) ---- */
+  function apXoa(ma, dk, luc){          /* gỡ mã đã xoá và kết quả của mã khỏi bộ nhớ của máy này */
+    if(PRE ? ma.charAt(0) !== "L" : !/^\d{6}$/.test(ma)) return false;
+    var so = six(+ma.replace(/\D/g, "")), ch = false;
+    var a = arch(), b = a.filter(function(x){ return !(six(x.code) === so && (!dk || x.dk === dk) && (!luc || String(x.t || "") <= luc)); });
+    if(b.length !== a.length){ MEMARCH = b.slice(); _ss(KARCH, b); ch = true; }
+    try{
+      var kc = sget(KCODES, []), kc2 = kc.filter(function(x){ return !(six(x.code) === so && (!dk || x.dk === dk)); });
+      if(kc2.length !== kc.length){ _ss(KCODES, kc2); MEMARCH = b.slice(); ch = true; }
+      var all = sget(KEY, []), keep = all.filter(function(r){ return !(r && String(r.mabai) === so && (!dk || dayKey(new Date(r.t)) === dk) && (!luc || String(r.t || "") <= luc)); });
+      if(keep.length !== all.length){ _ss(KEY, keep); ch = true; KM.dirty = true; }
+    }catch(e){}
+    delete KM.srv[so];
+    return ch;
+  }
+  function askXoa(x){
+    var so = six(x.code), d = document.createElement("div");
+    d.style.cssText = "position:fixed;inset:0;background:rgba(10,25,45,.55);display:grid;place-items:center;z-index:9999";
+    d.innerHTML = '<div style="background:#fff;border-radius:18px;padding:22px 26px;max-width:460px;font-family:inherit">'
+      + '<div style="font-size:20px;font-weight:800;color:#c62828">🗑️ Xoá mã ' + fmtCode(x.code) + '</div>'
+      + '<p>Lớp <b>' + esc(x.lop) + '</b> · ' + esc(x.label || "") + ' · tạo ngày ' + fmtDk(x.dk) + '</p>'
+      + '<p style="color:#8a1c1c">Mã và <b>toàn bộ bài làm, kết quả của mã này</b> sẽ bị xoá khỏi danh sách và báo cáo. Dữ liệu được chuyển sang trang “DaXoa” trên máy chủ để khôi phục khi cần.</p>'
+      + '<p>Gõ lại mã <b>' + so + '</b> để xác nhận:</p><input id="kmxIn" inputmode="numeric" maxlength="7" style="width:100%;padding:10px;font-size:20px;border:2px solid #dbe3ec;border-radius:10px">'
+      + '<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px"><button class="btn" id="kmxNo">Huỷ</button><button class="btn" id="kmxOk" style="background:#c62828;color:#fff" disabled>Xoá mã</button></div></div>';
+    document.body.appendChild(d);
+    var inp = d.querySelector("#kmxIn"), ok = d.querySelector("#kmxOk");
+    inp.focus(); inp.addEventListener("input", function(){ ok.disabled = inp.value.replace(/\D/g, "") !== so; });
+    d.querySelector("#kmxNo").onclick = function(){ d.remove(); };
+    ok.onclick = function(){
+      ok.disabled = true; ok.textContent = "Đang xoá…";
+      base().then(function(u){
+        if(!u) throw new Error("net");
+        return fetch(withKey(u, apiUrl(u, "xoa", isWeb(u) ? "x=1" : "")), { method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" },
+          body: JSON.stringify({ ma: PRE + so, loai: KIND, dk: x.dk }) }).then(function(r){ return r.json(); });
+      }).then(function(r){
+        if(!r || !r.ok) throw new Error(r && r.err || "save");
+        apXoa(PRE + so, x.dk, ""); d.remove();
+        try{ for(var i = localStorage.length - 1; i >= 0; i--){ var kk = localStorage.key(i); if(/maychu_tu/.test(kk)) localStorage.removeItem(kk); } }catch(e2){}   /* tải lại kết quả từ đầu */
+        toast("🗑️ Đã xoá mã " + fmtCode(x.code) + " và " + (r.n || 0) + " bản ghi kết quả.");
+        refreshAll();
+      }).catch(function(e){
+        ok.disabled = false; ok.textContent = "Xoá mã";
+        toast(e && e.message === "key" ? "🔒 Cần nhập đúng mã bí mật giáo viên (nút 🔑) mới xoá được." : "⚠️ Chưa kết nối được máy chủ – chưa xoá được mã.");
+      });
+    };
+  }
+  function refreshAll(){
+    try{ if(typeof fillMa === "function") fillMa(); }catch(e){}
+    try{ if(typeof fillClasses === "function") fillClasses(); }catch(e){}
+    try{ if(typeof renderReport === "function") renderReport(); }catch(e){}
+    renderCodes();
+  }
+  document.addEventListener("click", function(e){
+    var b = e.target.closest && e.target.closest("[data-kmx]"); if(!b) return;
+    var p = b.dataset.kmx.split("|"), x = arch().filter(function(y){ return String(y.code) === p[0] && String(y.dk) === p[1]; })[0];
+    if(x) askXoa(x);
+  });
+
   /* ---- 4. học sinh: mã đã khoá thì không vào được ---- */
   function curCode(){ var el = $("inCode"); return el ? el.value.replace(/\D/g, "") : ""; }
   function lockedNow(){ var c = curCode(); return c.length === 6 && KM.stu[c]; }
   function showLock(){
     var c = curCode(), why = KM.stu[c]; if(!why) return;
-    var info = $("codeInfo"); if(info){ info.className = "codeinfo no"; info.textContent = "🔒 Mã " + fmtCode(+c) + " đã khoá (" + prettyKhoa(why) + "). Em hỏi thầy cô mã mới nhé."; }
+    var xoa = why === "xoa" || /xoá/.test(why);
+    var info = $("codeInfo"); if(info){ info.className = "codeinfo no"; info.textContent = xoa ? "🗑️ Mã " + fmtCode(+c) + " đã bị thầy cô xoá. Em hỏi thầy cô mã mới nhé." : "🔒 Mã " + fmtCode(+c) + " đã khoá (" + prettyKhoa(why) + "). Em hỏi thầy cô mã mới nhé."; }
     var bj = $("btnJoin"); if(bj) bj.disabled = true;
     ["pick2", "stt2Box", "tenBox"].forEach(function(id){ var el = $(id); if(el) el.classList.add("hide"); });
   }

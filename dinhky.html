@@ -698,6 +698,7 @@ $("inMa").addEventListener("input", function(){
 function loadCode(ma){
   joinMsg("⏳ Đang kiểm tra mã…", "wait");
   NET.get("de", "ma=" + ma).then(function(d){
+    if(d && d.xoa) throw new Error("xoa");
     if(!d || !d.ma && !d.lop) throw new Error("ma");
     var de = d.de, ex = examOf(de);
     if(!de) throw new Error("cu");
@@ -720,6 +721,7 @@ function loadCode(ma){
     var m = String(e && e.message);
     joinMsg(m === "net" || /fetch|abort|HTTP/i.test(m) ? "⚠️ Chưa kết nối được máy chủ. Em báo thầy cô kiểm tra máy chủ rồi nhập lại mã." :
       m === "het" ? "⌛ Mã này đã hết hạn (mã chỉ dùng trong ngày tạo)." :
+      m === "xoa" ? "🗑️ Mã này đã bị thầy cô xoá. Em hỏi thầy cô mã mới nhé." :
       m === "khoa" ? "🔒 Mã này đã khoá (" + esc(prettyKhoa(JOIN.khoa)) + "). Em hỏi thầy cô nhé." :
       m === "cu" ? "⚠️ Mã này là mã của trang kiểm tra theo bài, không phải mã đề định kỳ." :
       m === "de" ? "⚠️ Trang chưa có đề này. Thầy cô cần cập nhật trang." : "❌ Mã chưa đúng. Em xem lại mã thầy cô cho.", "bad");
@@ -821,6 +823,12 @@ function aiPick(a){ /* hai AI lệch ≤ 0,5 điểm → tự thống nhất l�
   return null;
 }
 var KCODES = "dk_codes_v1";
+/* Danh sách mã giữ trong bộ nhớ của trang; lưu thêm vào trình duyệt nếu còn chỗ.
+   (Bộ nhớ trình duyệt của trang web có thể đã đầy vì trang kiểm tra theo bài lưu rất nhiều kết quả cũ –
+   khi đó vẫn hiện đủ mã lấy từ máy chủ, chỉ không ghi nhớ được trên máy.) */
+var MEMCODES = null, CODEWARN = false;
+function getCodes(){ return (MEMCODES || sget(KCODES, [])).slice(); }
+function setCodes(l){ MEMCODES = l.slice(); if(!sset(KCODES, l) && !CODEWARN){ CODEWARN = true; console.warn("Bộ nhớ trình duyệt đầy – danh sách mã chỉ giữ trong lần mở trang này."); } }
 function askPass(msg){
   dlg("<h2>🔑 Đăng nhập giáo viên</h2><p class='mut'>" + (NET.web ? "Nhập mã bí mật giáo viên (đặt trong Code.gs)." : "Nhập mã giáo viên bản LAN.") + "</p>"
     + (msg ? "<div class='msg bad'>" + esc(msg) + "</div>" : "")
@@ -887,13 +895,23 @@ $("gMake").onclick = function(){
   $("gCode").classList.remove("hide"); $("gCodeBig").textContent = fmtCode(ma);
   $("gCodeInfo").textContent = "Lớp " + lop + " · " + EXAMS[de].ten + " · " + tg + " phút · rời bài tối đa " + vp + " lần";
   $("gCodeMsg").className = "msg wait"; $("gCodeMsg").textContent = "⏳ Đang lưu mã lên máy chủ…";
+  item.t = new Date().toISOString(); item.cho = 1;
+  var list0 = getCodes(); list0.unshift(item); setCodes(list0); renderToday();
+  function mark(ok){ var l = getCodes(); l.forEach(function(x){ if(x.ma === ma){ if(ok) delete x.cho; else x.cho = 2; } }); setCodes(l); renderToday(); }
   NET.post("de", [item], true).then(function(d){
     if(!d || !d.ok) throw new Error(d && d.err || "save");
     $("gCodeMsg").className = "msg ok"; $("gCodeMsg").textContent = "✅ Đã lưu mã. Học sinh nhập mã này để vào bài.";
-    var list = sget(KCODES, []); item.t = new Date().toISOString(); list.unshift(item); sset(KCODES, list); renderToday();
+    mark(true);
   }).catch(function(e){
-    $("gCodeMsg").className = "msg bad";
-    $("gCodeMsg").textContent = e.message === "key" ? "🔒 Chưa lưu được: mã bí mật chưa đúng." : "⚠️ Chưa lưu được mã lên máy chủ – học sinh chưa dùng được mã này. Kiểm tra kết nối rồi bấm Tạo mã lại.";
+    /* máy chủ Google có lúc trả lời chậm: kiểm tra lại xem mã đã vào máy chủ chưa */
+    NET.get("de", "ma=" + ma).then(function(d){
+      if(d && (d.lop || d.ma)){ $("gCodeMsg").className = "msg ok"; $("gCodeMsg").textContent = "✅ Đã lưu mã (máy chủ trả lời chậm). Học sinh nhập mã này để vào bài."; mark(true); return; }
+      throw 0;
+    }).catch(function(){
+      mark(false);
+      $("gCodeMsg").className = "msg bad";
+      $("gCodeMsg").textContent = e.message === "key" ? "🔒 Chưa lưu được: mã bí mật chưa đúng." : "⚠️ Chưa chắc mã đã lưu lên máy chủ (mạng chậm). Thầy bấm 🔄 Cập nhật trạng thái sau ít phút; nếu mã báo “chưa lưu” thì tạo mã mới.";
+    });
   });
 };
 $("gFull").onclick = function(){ dlg("<div style='text-align:center'><div class='mut'>" + esc($("gCodeInfo").textContent) + "</div><div class='codebig' style='font-size:120px'>" + esc($("gCodeBig").textContent) + "</div><button class='btn' onclick='dlgClose()'>Đóng</button></div>", true); };
@@ -902,10 +920,13 @@ GV.srv = {}; GV.q = ""; GV.f = ""; GV.srvT = 0;
 function prettyKhoa(t){ t = String(t || ""); var m;
   if((m = /^auto:(\d+)\/(\d+):(.*)$/.exec(t))) return "Tự khoá – cả lớp đã làm (" + m[1] + "/" + m[2] + ") lúc " + m[3];
   if((m = /^gv:(.*)$/.exec(t))) return "Giáo viên khoá lúc " + m[1];
+  if(t === "xoa") return "Mã đã bị giáo viên xoá";
   return t; }
 function fmtDk(dk){ dk = String(dk); return dk.slice(6, 8) + "/" + dk.slice(4, 6) + "/" + dk.slice(0, 4); }
 function codeState(x){
   var s = GV.srv[x.ma] || {};
+  if(x.cho === 1) return { lock: false, can: false, txt: "⏳ Đang lưu lên máy chủ…" };
+  if(x.cho === 2 && !GV.srv[x.ma]) return { lock: true, can: false, txt: "⚠️ Chưa lưu được lên máy chủ – học sinh chưa dùng được" };
   if(s.khoa) return { lock: true, can: x.dk === dayKey(), txt: "🔒 " + prettyKhoa(s.khoa) };
   if(x.dk !== dayKey()) return { lock: true, can: false, txt: "🔒 Hết ngày" };
   return { lock: false, can: true, txt: "🟢 Đang mở" };
@@ -914,19 +935,27 @@ function loadSrvCodes(force){
   if(!force && Date.now() - GV.srvT < 15000) return Promise.resolve(false);
   GV.srvT = Date.now();
   return NET.get("khoa", "", true).then(function(d){
-    if(!d || !d.ma) return false;
-    var list = sget(KCODES, []), have = {}; list.forEach(function(x){ have[x.ma] = 1; });
+    if(!d || !d.ma){ GV.srvT = 0; return false; }
+    var list = getCodes(), have = {}; list.forEach(function(x){ have[x.ma] = x; });
     d.ma.forEach(function(x){
       var cfg = x.cfg || {}, de = x.de || cfg.de; if(!de) return;
       GV.srv[x.ma] = { khoa: x.khoa || "", lam: +x.lam || 0, si: +x.si || 0 };
-      if(!have[x.ma]){ have[x.ma] = 1; list.push({ ma: x.ma, lop: x.lop || cfg.lop || "", de: de, dk: +(x.dk || cfg.dk) || 0, tg: +(x.tg || cfg.tg) || 0, vp: +(x.vp || cfg.vp) || 0, t: x.t || "" }); }
+      if(have[x.ma]){ delete have[x.ma].cho; }
+      else{ have[x.ma] = {}; list.push({ ma: x.ma, lop: x.lop || cfg.lop || "", de: de, dk: +(x.dk || cfg.dk) || 0, tg: +(x.tg || cfg.tg) || 0, vp: +(x.vp || cfg.vp) || 0, t: x.t || "" }); }
     });
-    sset(KCODES, list); return true;
-  }).catch(function(){ return false; });
+    setCodes(list);
+    (d.xoa || []).forEach(function(z){ boMa(String(z.ma), z.luc || ""); });
+    return true;
+  }).catch(function(){ GV.srvT = 0; return false; });
 }
+/* tự cập nhật danh sách mã & trạng thái mỗi 60 giây khi đang ở thẻ "Tạo mã" */
+setInterval(function(){
+  if($("scGv").classList.contains("hide") || $("tMa").classList.contains("hide") || !NET.key() && NET.web) return;
+  loadSrvCodes(true).then(function(ok){ if(ok) renderToday(); });
+}, 60000);
 function renderToday(){
   var q = GV.q.replace(/\s+/g, "").toUpperCase();
-  var all = sget(KCODES, []).slice().sort(function(a, b){ return (b.dk - a.dk) || String(b.t || "").localeCompare(String(a.t || "")); });
+  var all = getCodes().slice().sort(function(a, b){ return (b.dk - a.dk) || String(b.t || "").localeCompare(String(a.t || "")); });
   var list = all.filter(function(x){
     var st = codeState(x);
     if(GV.f === "mo" && st.lock) return false; if(GV.f === "khoa" && !st.lock) return false; if(GV.f === "nay" && x.dk !== dayKey()) return false;
@@ -938,7 +967,7 @@ function renderToday(){
     return "<tr" + (st.lock ? " style='opacity:.75'" : "") + "><td><b>" + fmtCode(x.ma) + "</b></td><td>" + esc(x.lop) + "</td><td class='l'>" + esc((EXAMS[x.de] || {}).ten || x.de) + "</td><td>" + fmtDk(x.dk) + "</td><td>" + (x.tg ? x.tg + " phút" : "") + "</td><td>" + (s.si ? (s.lam || 0) + "/" + s.si : (s.lam || "")) + "</td><td class='l small'>" + esc(st.txt) + "</td><td style='white-space:nowrap'>"
       + (st.lock ? "" : "<button class='btn ghost sm' data-cshow='" + x.ma + "'>Chiếu</button> ")
       + (st.can ? "<button class='btn ghost sm' data-ckh='" + x.ma + "|" + (st.lock ? 0 : 1) + "'>" + (st.lock ? "🔓 Mở khoá" : "🔒 Khoá") + "</button> " : "")
-      + "<button class='btn sm' data-ckq='" + x.ma + "'>Xem kết quả</button> <button class='btn ghost sm' data-credo='" + x.ma + "'>🔑 Mã làm lại</button></td></tr>";
+      + "<button class='btn sm' data-ckq='" + x.ma + "'>Xem kết quả</button> <button class='btn ghost sm' data-credo='" + x.ma + "'>🔑 Mã làm lại</button> <button class='btn ghost sm' data-cxoa='" + x.ma + "' style='color:#c62828;border-color:#e3a3a3'>🗑️ Xoá</button></td></tr>";
   }).join("");
   if(!list.length) h += "<tr><td colspan='8' class='mut'>" + (all.length ? "Không có mã phù hợp." : "Chưa tạo mã nào.") + "</td></tr>";
   $("gToday").innerHTML = h;
@@ -948,10 +977,12 @@ $("dkQ").oninput = function(){ GV.q = this.value.trim(); renderToday(); };
 $("dkF").onchange = function(){ GV.f = this.value; renderToday(); };
 $("dkR").onclick = function(){ loadSrvCodes(true).then(renderToday); };
 $("gToday").addEventListener("click", function(e){
+  var xb = e.target.closest("[data-cxoa]");
+  if(xb){ var xx = getCodes().filter(function(y){ return y.ma === xb.dataset.cxoa; })[0]; if(xx) askXoa(xx); return; }
   var rb = e.target.closest("[data-credo]");
   if(rb){ dlg("<div style='text-align:center'><h2>🔑 Mã làm lại – mã kiểm tra " + fmtCode(rb.dataset.credo) + "</h2><div class='codebig'>" + redoPin(rb.dataset.credo) + "</div><p class='mut'>Chỉ đọc cho em cần làm lại, không chiếu lên màn hình. Mã này khác mã giáo viên và chỉ dùng cho bài của mã kiểm tra này.</p><button class='btn' onclick='dlgClose()'>Đóng</button></div>"); return; }
   var b = e.target.closest("[data-cshow],[data-ckh],[data-ckq]"); if(!b) return;
-  var ma = b.dataset.cshow || b.dataset.ckq || b.dataset.ckh.split("|")[0], x = sget(KCODES, []).filter(function(y){ return y.ma === ma; })[0]; if(!x) return;
+  var ma = b.dataset.cshow || b.dataset.ckq || b.dataset.ckh.split("|")[0], x = getCodes().filter(function(y){ return y.ma === ma; })[0]; if(!x) return;
   if(b.dataset.cshow){ dlg("<div style='text-align:center'><div class='mut'>Lớp " + esc(x.lop) + " · " + esc((EXAMS[x.de] || {}).ten || x.de) + "</div><div class='codebig' style='font-size:120px'>" + fmtCode(x.ma) + "</div><button class='btn' onclick='dlgClose()'>Đóng</button></div>", true); return; }
   if(b.dataset.ckq){
     document.querySelector(".tabs button[data-t='tCham']").click();
@@ -965,6 +996,33 @@ $("gToday").addEventListener("click", function(e){
     toast(on ? "🔒 Đã khoá mã " + fmtCode(x.ma) : "🔓 Đã mở khoá mã " + fmtCode(x.ma)); renderToday();
   }).catch(function(){ toast("⚠️ Chưa khoá/mở được – kiểm tra kết nối máy chủ."); });
 });
+
+/* ---------- XOÁ MÃ: mã tạo thừa/nhầm cùng toàn bộ bài làm, điểm chốt (máy chủ chuyển sang trang DaXoa) ---------- */
+function boMa(ma, luc){           /* gỡ mã đã xoá và bài làm của mã khỏi trang trên máy này */
+  var l = getCodes(), l2 = l.filter(function(x){ return !(x.ma === ma && (!luc || String(x.t || "") <= luc)); });
+  if(l2.length !== l.length) setCodes(l2);
+  var ph = {};
+  GV.recs = (GV.recs || []).filter(function(r){ if(r.t === "bai" && r.ma === ma && (!luc || String(r.kt || "") <= luc)){ ph[r.phien] = 1; return false; } return true; });
+  GV.recs = GV.recs.filter(function(r){ return !(r.t === "cham" && ph[r.phien]); });
+  Object.keys(ph).forEach(function(p){ delete GV.ai[p]; }); sset("dk_ai_v1", GV.ai);
+  delete GV.srv[ma];
+}
+function askXoa(x){
+  dlg("<h2 style='color:#c62828'>🗑️ Xoá mã " + fmtCode(x.ma) + "</h2><p>Lớp <b>" + esc(x.lop) + "</b> · " + esc((EXAMS[x.de] || {}).ten || x.de) + " · tạo ngày " + fmtDk(x.dk) + "</p>"
+    + "<p style='color:#8a1c1c'>Mã và <b>toàn bộ bài làm, điểm AI, điểm đã chốt của mã này</b> sẽ bị xoá khỏi danh sách và bảng điểm. Dữ liệu được chuyển sang trang “DaXoa” trên máy chủ để khôi phục khi cần.</p>"
+    + "<p>Gõ lại mã <b>" + x.ma + "</b> để xác nhận:</p><input id='xIn' inputmode='numeric' maxlength='7' style='width:100%;padding:10px;font-size:1.2em;border:2px solid #dbe3ec;border-radius:10px'>"
+    + "<div class='foot'><button class='btn ghost' onclick='dlgClose()'>Huỷ</button><div class='sp'></div><button class='btn' id='xOk' style='background:#c62828' disabled>Xoá mã</button></div>");
+  $("xIn").focus();
+  $("xIn").oninput = function(){ $("xOk").disabled = this.value.replace(/\D/g, "") !== x.ma; };
+  $("xOk").onclick = function(){
+    var b = this; b.disabled = true; b.textContent = "Đang xoá…";
+    NET.post("xoa", [{ ma: x.ma, loai: "dk", dk: x.dk }], true).then(function(d){
+      if(!d || !d.ok) throw new Error(d && d.err || "save");
+      boMa(x.ma, ""); dlgClose(); renderToday(); if(!$("tCham").classList.contains("hide")){ fillFilters(); fillMaSel(); renderTbl(); }
+      toast("🗑️ Đã xoá mã " + fmtCode(x.ma) + " và " + (d.n || 0) + " bản ghi bài làm/điểm.");
+    }).catch(function(e){ b.disabled = false; b.textContent = "Xoá mã"; toast(e.message === "key" ? "🔒 Mã bí mật chưa đúng – chưa xoá được." : "⚠️ Chưa kết nối được máy chủ – chưa xoá được mã."); });
+  };
+}
 
 /* ---------- tải & gộp kết quả ---------- */
 function loadRecs(){
