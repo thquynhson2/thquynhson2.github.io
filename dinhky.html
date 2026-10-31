@@ -226,6 +226,10 @@ input.num{width:220px;font-size:1.3em;font-weight:800;text-align:right;border:2p
     <div class="scorebox" id="dScore"></div>
     <div id="dNote" class="mut"></div>
     <div id="dSend" class="msg wait"></div>
+    <details style="margin-top:18px;text-align:left"><summary class="mut small" style="cursor:pointer">Thầy cô cho em làm lại bài?</summary>
+      <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap"><input id="redoIn" inputmode="numeric" maxlength="4" placeholder="Mã làm lại thầy cô cho" style="flex:1;min-width:180px;padding:10px;border:2px solid var(--line);border-radius:10px">
+      <button class="btn" id="redoOk">Cho em làm lại</button></div>
+      <div class="mini" style="margin-top:4px">Bài đã nộp vẫn được giữ trên máy chủ; thầy cô lấy kết quả của lần nộp sau cùng.</div></details>
   </div>
 </section>
 
@@ -756,6 +760,18 @@ $("cfGo").onclick = function(){
   renderQ(); startClock();
 };
 
+/* ======================= MÃ LÀM LẠI (khác mã giáo viên, riêng cho từng mã kiểm tra) ======================= */
+function redoPin(ma){ var t = "lamlai|dk|" + ma, h = 2166136261; for(var i = 0; i < t.length; i++){ h ^= t.charCodeAt(i); h = Math.imul(h, 16777619) >>> 0; } return String(1000 + h % 9000); }
+$("redoOk").onclick = function(){
+  if(!S) return;
+  if($("redoIn").value.replace(/\s/g, "") !== redoPin(S.cfg.ma)){ toast("Mã làm lại chưa đúng. Em hỏi thầy cô nhé."); return; }
+  if(!S.st.ok){ toast("Bài trước chưa gửi được về máy thầy cô – em chờ gửi xong rồi mới làm lại."); return; }
+  try{ localStorage.removeItem(skey()); }catch(e){}
+  $("redoIn").value = ""; $("scDone").classList.add("hide"); $("scJoin").classList.remove("hide");
+  toast("Đã cho phép làm lại. Em bấm “Bắt đầu làm bài”.");
+  pickHs(S.hs.stt, S.hs.ten); S = null;
+};
+
 /* ======================= NỘP BÀI ======================= */
 function submit(why){
   if(!S || S.st.sent) return;
@@ -812,7 +828,7 @@ function askPass(msg){
     + "<div class='foot'><button class='btn ghost' onclick='dlgClose()'>Huỷ</button><div class='sp'></div><button class='btn' id='kOk'>Vào</button></div>");
   var go = function(){
     var v = $("kIn").value.trim(); if(!v){ $("kIn").focus(); return; }
-    if(!NET.web){ if(v !== "2026"){ askPass("Mã chưa đúng."); return; } dlgClose(); enterGv(); return; }
+    if(!NET.web){ if(v !== "Dung2027"){ askPass("Mã chưa đúng."); return; } dlgClose(); enterGv(); return; }
     $("kOk").disabled = true; $("kOk").textContent = "Đang kiểm tra…";
     NET.setKey(v);
     NET.get("dk", "from=999999998", true).then(function(d){
@@ -922,7 +938,7 @@ function renderToday(){
     return "<tr" + (st.lock ? " style='opacity:.75'" : "") + "><td><b>" + fmtCode(x.ma) + "</b></td><td>" + esc(x.lop) + "</td><td class='l'>" + esc((EXAMS[x.de] || {}).ten || x.de) + "</td><td>" + fmtDk(x.dk) + "</td><td>" + (x.tg ? x.tg + " phút" : "") + "</td><td>" + (s.si ? (s.lam || 0) + "/" + s.si : (s.lam || "")) + "</td><td class='l small'>" + esc(st.txt) + "</td><td style='white-space:nowrap'>"
       + (st.lock ? "" : "<button class='btn ghost sm' data-cshow='" + x.ma + "'>Chiếu</button> ")
       + (st.can ? "<button class='btn ghost sm' data-ckh='" + x.ma + "|" + (st.lock ? 0 : 1) + "'>" + (st.lock ? "🔓 Mở khoá" : "🔒 Khoá") + "</button> " : "")
-      + "<button class='btn sm' data-ckq='" + x.ma + "'>Xem kết quả</button></td></tr>";
+      + "<button class='btn sm' data-ckq='" + x.ma + "'>Xem kết quả</button> <button class='btn ghost sm' data-credo='" + x.ma + "'>🔑 Mã làm lại</button></td></tr>";
   }).join("");
   if(!list.length) h += "<tr><td colspan='8' class='mut'>" + (all.length ? "Không có mã phù hợp." : "Chưa tạo mã nào.") + "</td></tr>";
   $("gToday").innerHTML = h;
@@ -932,6 +948,8 @@ $("dkQ").oninput = function(){ GV.q = this.value.trim(); renderToday(); };
 $("dkF").onchange = function(){ GV.f = this.value; renderToday(); };
 $("dkR").onclick = function(){ loadSrvCodes(true).then(renderToday); };
 $("gToday").addEventListener("click", function(e){
+  var rb = e.target.closest("[data-credo]");
+  if(rb){ dlg("<div style='text-align:center'><h2>🔑 Mã làm lại – mã kiểm tra " + fmtCode(rb.dataset.credo) + "</h2><div class='codebig'>" + redoPin(rb.dataset.credo) + "</div><p class='mut'>Chỉ đọc cho em cần làm lại, không chiếu lên màn hình. Mã này khác mã giáo viên và chỉ dùng cho bài của mã kiểm tra này.</p><button class='btn' onclick='dlgClose()'>Đóng</button></div>"); return; }
   var b = e.target.closest("[data-cshow],[data-ckh],[data-ckq]"); if(!b) return;
   var ma = b.dataset.cshow || b.dataset.ckq || b.dataset.ckh.split("|")[0], x = sget(KCODES, []).filter(function(y){ return y.ma === ma; })[0]; if(!x) return;
   if(b.dataset.cshow){ dlg("<div style='text-align:center'><div class='mut'>Lớp " + esc(x.lop) + " · " + esc((EXAMS[x.de] || {}).ten || x.de) + "</div><div class='codebig' style='font-size:120px'>" + fmtCode(x.ma) + "</div><button class='btn' onclick='dlgClose()'>Đóng</button></div>", true); return; }

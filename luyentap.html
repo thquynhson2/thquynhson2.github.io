@@ -268,7 +268,7 @@ body.examon .toplk{display:none!important}
     <button class="big" id="btnLogin">Vào</button>
     <button class="big alt" id="btnLoginBack">Quay lại</button>
   </div>
-  <p class="note" id="loginMsg">Mã mặc định: 2026 (đổi được trong trang giáo viên). Mã này chỉ để học sinh không vào nhầm, không phải mật khẩu bảo mật.</p>
+  <p class="note" id="loginMsg">Nhập mã giáo viên để vào trang giáo viên.</p>
 </section>
 
 <!-- TEACHER REPORT -->
@@ -445,7 +445,7 @@ var MEM = {};
 function sget(k, d){ try{ var v = localStorage.getItem(k); return v===null ? (k in MEM ? MEM[k] : d) : JSON.parse(v); }catch(e){ return k in MEM ? MEM[k] : d; } }
 function sset(k, v){ MEM[k]=v; try{ localStorage.setItem(k, JSON.stringify(v)); }catch(e){} }
 var KEY = "thth_chudeA_ketqua_v1", KSET = "thth_chudeA_caidat_v1";
-function settings(){ var s = sget(KSET, {}); return {n: s.n||10, pin: s.pin||"2026"}; }
+function settings(){ var s = sget(KSET, {}); return {n: s.n||10, pin: s.pin||"Dung2027"}; }
 
 /* ---------- helpers ---------- */
 function $(id){ return document.getElementById(id); }
@@ -1717,7 +1717,8 @@ $("btnLogin").addEventListener("click", function(){ setTimeout(function(){
         + '<td class="num">' + lam + '</td><td style="font-size:13px">' + esc(st.txt) + '</td><td style="white-space:nowrap">'
         + (st.lock ? '' : '<button class="btn" data-show="' + x.code + '" data-l="' + esc(x.lop) + ' · ' + esc(x.label || "") + '">Chiếu</button> ')
         + (st.can ? '<button class="btn" data-kmk="' + x.code + '|' + x.dk + '|' + (st.lock ? 0 : 1) + '">' + (st.lock ? '🔓 Mở khoá' : '🔒 Khoá') + '</button> ' : '')
-        + '<button class="btn" data-rep="' + k + '">Xem kết quả</button></td></tr>';
+        + '<button class="btn" data-rep="' + k + '">Xem kết quả</button>'
+        + (KIND === "kt" ? ' <button class="btn" data-redo="' + k + '" title="Mã cho học sinh làm lại bài của mã này">🔑 Mã làm lại</button>' : '') + '</td></tr>';
     }).join("");
     if(!list.length) h += '<tr><td colspan="8" class="muted">' + (all.length ? "Không có mã phù hợp." : "Chưa tạo mã nào.") + '</td></tr>';
     if(list.length > KM.lim) h += '<tr><td colspan="8" style="text-align:center"><button class="btn" id="kmMore" type="button">Xem thêm ' + (list.length - KM.lim) + ' mã…</button></td></tr>';
@@ -1768,6 +1769,42 @@ $("btnLogin").addEventListener("click", function(){ setTimeout(function(){
     if(lockedNow()){ e.stopPropagation(); e.preventDefault(); showLock(); toast("🔒 Mã này đã khoá."); }
   }, true);
   var inC = $("inCode"); if(inC) inC.addEventListener("input", function(){ var c = curCode(); if(c.length === 6 && KM.stu[c] === "") delete KM.stu[c]; });
+
+  /* ---- 5. MÃ LÀM LẠI: riêng cho từng mã kiểm tra, KHÁC mã giáo viên ----
+     Mỗi mã kiểm tra có một mã làm lại 4 chữ số (tính ra từ chính mã kiểm tra). Giáo viên bấm "🔑 Mã làm lại"
+     trong bảng mã để xem; mã giáo viên (mã vào trang giáo viên) không còn dùng để cho học sinh làm lại. */
+  if(KIND !== "kt") return;
+  function redoPin(ma){
+    var t = "lamlai|" + six(ma) + "|" + (typeof KSALT !== "undefined" ? KSALT : 0), h = 2166136261;
+    for(var i = 0; i < t.length; i++){ h ^= t.charCodeAt(i); h = Math.imul(h, 16777619) >>> 0; }
+    return String(1000 + h % 9000);
+  }
+  document.addEventListener("click", function(e){
+    var b = e.target.closest && e.target.closest("[data-redo]"); if(!b) return;
+    var ma = b.dataset.redo;
+    alertBox("🔑 Mã làm lại của mã kiểm tra " + fmtCode(+ma), redoPin(ma), "Chỉ đọc cho em cần làm lại (không chiếu lên màn hình). Mã này chỉ dùng cho bài của mã " + fmtCode(+ma) + ".");
+  });
+  function alertBox(title, big, note){
+    var d = document.createElement("div");
+    d.style.cssText = "position:fixed;inset:0;background:rgba(10,25,45,.55);display:grid;place-items:center;z-index:9999";
+    d.innerHTML = '<div style="background:#fff;border-radius:18px;padding:22px 28px;max-width:420px;text-align:center;font-family:inherit">'
+      + '<div style="font-weight:700">' + esc(title) + '</div><div style="font-size:56px;font-weight:900;letter-spacing:8px;color:#1F4E79;margin:8px 0">' + esc(big) + '</div>'
+      + '<div style="font-size:14px;color:#5b6b7c">' + esc(note) + '</div><button class="btn" style="margin-top:14px">Đóng</button></div>';
+    d.addEventListener("click", function(ev){ if(ev.target === d || ev.target.tagName === "BUTTON") d.remove(); });
+    document.body.appendChild(d);
+  }
+  if(typeof showDone === "function"){
+    var _sd = showDone;
+    showDone = function(){ var r = _sd.apply(this, arguments); var i = $("exPin"); if(i){ i.placeholder = "Mã làm lại thầy cô cho"; i.setAttribute("inputmode", "numeric"); } return r; };
+  }
+  document.addEventListener("click", function(e){
+    if(!e.target || e.target.id !== "btnExRedo") return;
+    e.stopPropagation(); e.preventDefault();
+    var ma = (typeof EXAM !== "undefined" && EXAM.ma) || curCode();
+    if(($("exPin").value || "").replace(/\s/g, "") !== redoPin(ma)){ toast("Mã làm lại chưa đúng. Em hỏi thầy cô nhé."); return; }
+    var d = daLam(); delete d[examKey()]; sset(KDALAM, d);
+    $("exIntro").classList.add("hide"); toast("Đã cho phép làm lại. Em bấm Vào làm bài.");
+  }, true);
 })();
 </script>
 </body>
