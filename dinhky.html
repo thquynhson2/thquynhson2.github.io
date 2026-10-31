@@ -278,6 +278,8 @@ input.num{width:220px;font-size:1.3em;font-weight:800;text-align:right;border:2p
       <button class="btn sm" id="cImport">📥 Nhập điểm Claude + Gemini</button>
       <button class="btn sm" id="cLockAll">✅ Chốt các bài hai AI thống nhất</button>
       <button class="btn ghost sm" id="cXls">📊 Tải bảng điểm Excel</button>
+      <button class="btn sm" id="cZip" title="Mỗi em một tệp Word, tên tệp: STT_Họ và tên_Lớp">🗂️ Tải bài cả lớp (tệp nén .zip)</button>
+      <button class="btn ghost sm" id="cDocAll" title="Tất cả bài gộp trong một tệp Word, mỗi em một trang">📄 Gộp 1 tệp Word</button>
     </div>
     <div style="overflow:auto;max-height:70vh"><table class="tbl" id="cTbl"></table></div>
     <p class="mini">Phần viết do <b>Claude</b> và <b>Gemini</b> cùng chấm: lệch không quá 0,5 điểm → <span class="st c">🤝 thống nhất</span> (tự lấy điểm cao hơn), thầy chốt cả loạt; lệch từ 0,75 điểm trở lên → <span class="st w" style="background:#fdecec;color:#c62828">⚖️ lệch điểm</span>, thầy mở bài để chọn điểm. <span class="st k">✅ đã chốt</span> là điểm chính thức. Bấm vào một dòng để xem bài, lý do chấm của từng AI và sửa điểm.</p>
@@ -1102,13 +1104,13 @@ function renderTbl(){
     var f = finalOf(st); if(f.locked) nk++; else if(f.need || f.thieu) nw++; else if(f.lech) nl++; else nr++;
     h += "<tr class='row' data-i='" + i + "'><td>" + esc(st.b.lop) + "</td><td>" + st.b.stt + "</td><td class='l'>" + esc(st.b.ten) + (st.b.lan > 1 ? " <span class='mini'>(nộp " + st.b.lan + " lần)</span>" : "") + "</td>" + tp.map(function(q){ return "<td>" + fmtD(f.p[q.k]) + "</td>"; }).join("");
     if(tl) tl.cau.forEach(function(c){ h += "<td>" + fmtD(f.cau[c.id] || 0) + "</td>"; });
-    h += "<td><b>" + fmtD(f.tong) + "</b></td><td>" + statusHtml(f) + "</td><td>" + (st.b.vp || 0) + (st.b.ly === "roibai" ? " ⚠️" : "") + "</td></tr>";
+    h += "<td><b>" + fmtD(f.tong) + "</b></td><td>" + statusHtml(f) + "</td><td>" + (st.b.vp || 0) + (st.b.ly === "roibai" ? " ⚠️" : "") + " <button class='btn ghost sm' data-tai='" + i + "' title='Tải bài của em này (Word)' style='padding:2px 8px'>📄</button></td></tr>";
   });
   if(!list.length) h += "<tr><td colspan='12' class='mut'>Chưa có bài nộp cho đề này.</td></tr>";
   $("cTbl").innerHTML = h; GV.list = list;
   $("cSum").innerHTML = "<b>" + list.length + "</b> bài · <b>" + nk + "</b> đã chốt · <b>" + nr + "</b> sẵn sàng chốt · <b style='color:#c62828'>" + nl + "</b> lệch điểm cần thầy xem · " + nw + " chưa đủ hai AI chấm";
 }
-$("cTbl").addEventListener("click", function(e){ var r = e.target.closest("tr.row"); if(r) openGrade(+r.dataset.i); });
+$("cTbl").addEventListener("click", function(e){ var t = e.target.closest("[data-tai]"); if(t){ e.stopPropagation(); taiBai([GV.list[+t.dataset.tai]], "mot"); return; } var r = e.target.closest("tr.row"); if(r) openGrade(+r.dataset.i); });
 
 /* ---------- màn hình chấm 1 bài ---------- */
 function highlight(text, groups){
@@ -1147,8 +1149,9 @@ function openGrade(i){
       h += "</span></div></div>";
     });
   }); });
-  h += "<div class='foot'><span id='gTot' class='big' style='font-size:1.4em'></span><div class='sp'></div><button class='btn ghost' onclick='dlgClose()'>Đóng</button><button class='btn org' id='gLock'>✅ Chốt điểm bài này</button></div>";
+  h += "<div class='foot'><span id='gTot' class='big' style='font-size:1.4em'></span><div class='sp'></div><button class='btn ghost' id='gTai'>📄 Tải bài này</button><button class='btn ghost' onclick='dlgClose()'>Đóng</button><button class='btn org' id='gLock'>✅ Chốt điểm bài này</button></div>";
   dlg(h, true); updTot();
+  $("gTai").onclick = function(){ taiBai([st], "mot"); };
   $("ovBox").querySelectorAll(".qb").forEach(function(q){ q.onclick = function(e){ var b = e.target.closest("button"); if(!b) return; GV.edit.v[q.dataset.k] = +b.dataset.q; q.querySelectorAll("button").forEach(function(x){ x.classList.toggle("sel", x === b); }); updTot(); }; });
   $("gLock").onclick = function(){ lockOne(st, GV.edit.v).then(function(){ dlgClose(); renderTbl(); }); };
 }
@@ -1248,6 +1251,91 @@ $("cImport").onclick = function(){
     toast("✅ Đã nhận " + n + " điểm. " + dong + " ý hai AI thống nhất" + (lech ? ", " + lech + " ý lệch từ 0,75 điểm cần thầy xem" : "") + ".");
   };
 };
+
+/* ---------- TẢI BÀI LÀM CỦA HỌC SINH (Word; cả lớp 1 tệp; hoặc .zip mỗi em 1 tệp) ---------- */
+var TRUONG = "TRƯỜNG TIỂU HỌC QUỲNH SƠN 2";
+function khongDau(t){ return String(t || "").normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/đ/g, "d").replace(/Đ/g, "D").replace(/[^A-Za-z0-9 _-]+/g, "").trim().replace(/\s+/g, "_"); }
+function sachTen(t){ return String(t || "").replace(/[\\\/:*?"<>|]+/g, " ").replace(/\s+/g, " ").trim(); }
+function tenTep(st){ var b = st.b; return ("0" + b.stt).slice(-2) + "_" + sachTen(b.ten) + "_" + sachTen(b.lop); }   /* ví dụ: 01_Nguyễn Văn An_8A */
+function baiHtml(st){
+  var b = st.b, ex = examOf(b.de), f = finalOf(st), a = b.tl || {}, it = b.may.it || {}, h = "";
+  var td = "border:1px solid #777;padding:3px 6px;vertical-align:top", th = td + ";background:#e8eef6;font-weight:bold";
+  var tr = function(cells, head){ return "<tr>" + cells.map(function(c){ return "<td style='" + (head ? th : td) + "'>" + c + "</td>"; }).join("") + "</tr>"; };
+  var dd = function(k){ var x = f.it[k]; return x ? fmtD(x.d) : "0"; };
+  h += "<table style='width:100%;border:none'><tr><td style='text-align:center;width:45%'><b>" + esc(TRUONG) + "</b></td><td style='text-align:center'><b>" + esc(ex.ten.toUpperCase()) + "</b><br><i>Năm học 2026 – 2027 · Thời gian: " + ex.tg + " phút</i></td></tr></table>";
+  h += "<p style='margin:8px 0'>Họ và tên: <b>" + esc(b.ten) + "</b> &nbsp; · &nbsp; Lớp: <b>" + esc(b.lop) + "</b> &nbsp; · &nbsp; STT: <b>" + b.stt + "</b> &nbsp; · &nbsp; Mã kiểm tra: " + fmtCode(b.ma) + "<br>Nộp lúc: " + new Date(b.kt).toLocaleString("vi-VN") + " &nbsp; · &nbsp; Số lần rời bài: " + (b.vp || 0) + (b.ly === "hetgio" ? " · nộp khi hết giờ" : b.ly === "roibai" ? " · tự nộp do rời bài quá số lần" : "") + "</p>";
+  h += "<table style='border-collapse:collapse;width:100%;margin:6px 0'>" + tr(tnParts(ex).map(function(q){ return q.nm + " (" + fmtD(q.max) + " đ)"; }).concat(ex.phan.filter(function(p){ return p.loai === "tl"; }).map(function(p){ return p.ten.split(".")[0] + " – tự luận (" + fmtD(p.diem) + " đ)"; }), ["TỔNG ĐIỂM", "Trạng thái"]), true)
+    + tr(tnParts(ex).map(function(q){ return fmtD(f.p[q.k]); }).concat(ex.phan.some(function(p){ return p.loai === "tl"; }) ? [fmtD(f.p.III)] : [], ["<b>" + fmtD(f.tong) + " / 10</b>", f.locked ? "Đã chốt" : "Chưa chốt (điểm tạm)"])) + "</table>";
+  ex.phan.forEach(function(ph){
+    h += "<p style='margin:10px 0 4px'><b>" + esc(ph.ten) + " (" + fmtD(ph.diem) + " điểm)</b></p>";
+    if(ph.loai === "mc"){
+      var rows = [tr(["Câu", "Câu hỏi", "Đáp án em chọn"], true)];
+      ph.cau.forEach(function(c, i){ var v = a[c.id]; rows.push(tr([i + 1, esc(c.hoi), v == null ? "<i>(bỏ trống)</i>" : esc(c.pa[v])])); });
+      h += "<table style='border-collapse:collapse;width:100%'>" + rows.join("") + "</table>";
+    } else if(ph.loai === "ds"){
+      ph.cau.forEach(function(c){
+        h += "<p style='margin:4px 0'><i>Tình huống:</i> " + esc(c.tinh_huong) + "</p>";
+        var rows = [tr(["Ý", "Nhận định", "Em chọn"], true)];
+        c.y.forEach(function(y){ var k = c.id + "." + y.id, v = a[k]; rows.push(tr([y.id, esc(y.nd), v == null ? "<i>(bỏ trống)</i>" : (v ? "Đúng" : "Sai")])); });
+        h += "<table style='border-collapse:collapse;width:100%'>" + rows.join("") + "</table>";
+      });
+    } else {
+      ph.cau.forEach(function(c, ci){
+        h += "<p style='margin:8px 0 2px'><b>Câu " + (ci + 1) + " (" + fmtD(c.d) + " điểm).</b> " + esc(c.hoi) + "</p>";
+        var rows = [tr(["Ý", "Bài làm của em", "Hướng dẫn chấm", "Điểm"], true)];
+        c.o.forEach(function(o){
+          var v = a[o.id], bl;
+          if(o.k === "num") bl = v == null || v === "" ? "<i>(bỏ trống)</i>" : esc(v) + " " + esc(o.dv || "");
+          else if(o.k === "chon") bl = v == null ? "<i>(bỏ trống)</i>" : esc(o.pa[v]);
+          else if(o.k === "tich") bl = Array.isArray(v) && v.length ? v.map(function(x){ return (o.dung.indexOf(x) >= 0 ? "✔ " : "✘ ") + esc(o.pa[x]); }).join("<br>") : "<i>(bỏ trống)</i>";
+          else bl = String(v || "").trim() ? esc(v).replace(/\n/g, "<br>") : "<i>(bỏ trống)</i>";
+          var hd = o.k === "num" ? "Đáp án: " + o.dap.toLocaleString("vi-VN") + " " + (o.dv || "") : o.k === "chon" ? "Đáp án: " + o.pa[o.dap] : o.k === "tich" ? "Ý đúng: " + o.dung.map(function(j){ return o.pa[j]; }).join("; ") : (o.hd || "");
+          var src = f.it[o.id] && f.it[o.id].src === "ai" ? " <i>(AI)</i>" : "";
+          rows.push(tr([esc(o.nhan), bl, "<span style='font-size:11pt'>" + esc(hd) + "</span>", dd(o.id) + " / " + fmtD(o.d) + src]));
+        });
+        h += "<table style='border-collapse:collapse;width:100%'>" + rows.join("") + "</table>";
+      });
+    }
+  });
+  h += "<table style='width:100%;margin-top:18px;border:none'><tr><td style='width:50%'></td><td style='text-align:center'><i>Ngày ...... tháng ...... năm 20......</i><br><b>Giáo viên chấm</b><br><br><br><br></td></tr></table>";
+  return h;
+}
+function docWord(bodies){
+  return "﻿<html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'><head><meta charset='utf-8'><title>Bài làm</title>"
+    + "<style>@page Section1{size:21cm 29.7cm;margin:1.5cm 1.5cm 1.5cm 2cm} div.Section1{page:Section1} body{font-family:'Times New Roman';font-size:13pt} td{font-family:'Times New Roman';font-size:12pt} p{margin:3px 0}</style></head><body><div class='Section1'>"
+    + bodies.join("<br clear='all' style='page-break-before:always'>") + "</div></body></html>";
+}
+/* tệp nén .zip (không nén, chuẩn "store") – tự làm để chạy được cả trên mạng LAN không có Internet */
+function zipFiles(files){
+  var crcT = []; for(var n = 0; n < 256; n++){ var c = n; for(var k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1; crcT[n] = c >>> 0; }
+  function crc(u){ var c = 0xFFFFFFFF; for(var i = 0; i < u.length; i++) c = crcT[(c ^ u[i]) & 255] ^ (c >>> 8); return (c ^ 0xFFFFFFFF) >>> 0; }
+  var enc = new TextEncoder(), parts = [], cen = [], off = 0;
+  function u16(v){ return [v & 255, (v >>> 8) & 255]; } function u32(v){ return [v & 255, (v >>> 8) & 255, (v >>> 16) & 255, (v >>> 24) & 255]; }
+  var d = new Date(), dt = ((d.getFullYear() - 1980) << 9) | ((d.getMonth() + 1) << 5) | d.getDate(), tm = (d.getHours() << 11) | (d.getMinutes() << 5) | (d.getSeconds() >> 1);
+  files.forEach(function(f){
+    var nm = enc.encode(f.name), data = enc.encode(f.text), c = crc(data);
+    var head = [].concat(u32(0x04034b50), u16(20), u16(0x0800), u16(0), u16(tm), u16(dt), u32(c), u32(data.length), u32(data.length), u16(nm.length), u16(0));
+    parts.push(new Uint8Array(head), nm, data);
+    cen.push([].concat(u32(0x02014b50), u16(20), u16(20), u16(0x0800), u16(0), u16(tm), u16(dt), u32(c), u32(data.length), u32(data.length), u16(nm.length), u16(0), u16(0), u16(0), u16(0), u32(0), u32(off)), nm);
+    off += head.length + nm.length + data.length;
+  });
+  var cs = 0; cen.forEach(function(x, i){ var u = i % 2 ? x : new Uint8Array(x); cen[i] = u; cs += u.length; });
+  var end = new Uint8Array([].concat(u32(0x06054b50), u16(0), u16(0), u16(files.length), u16(files.length), u32(cs), u32(off), u16(0)));
+  return new Blob(parts.concat(cen, [end]), { type: "application/zip" });
+}
+function taiBai(list, kieu){
+  list = (list || []).filter(Boolean);
+  if(!list.length){ toast("Chưa có bài nào để tải – thầy chọn đề, lớp rồi bấm 🔄 Tải bài mới."); return; }
+  list = list.slice().sort(function(x, y){ return String(x.b.lop).localeCompare(String(y.b.lop)) || (+x.b.stt || 0) - (+y.b.stt || 0); });
+  var de = list[0].b.de, lop = $("cLop").value || list[0].b.lop;
+  if(kieu === "mot"){ download(tenTep(list[0]) + ".doc", docWord([baiHtml(list[0])]), "application/msword"); return; }
+  if(kieu === "lop"){ download("BaiLam_" + khongDau(de) + "_" + khongDau(lop) + ".doc", docWord(list.map(baiHtml)), "application/msword"); toast("📦 Đã tải " + list.length + " bài trong một tệp Word (mỗi em một trang)."); return; }
+  var blob = zipFiles(list.map(function(st){ return { name: tenTep(st) + ".doc", text: docWord([baiHtml(st)]) }; }));
+  var a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = "BaiLam_" + khongDau(de) + "_" + khongDau(lop) + ".zip"; document.body.appendChild(a); a.click(); setTimeout(function(){ URL.revokeObjectURL(a.href); a.remove(); }, 1500);
+  toast("🗂️ Đã tải tệp nén gồm " + list.length + " bài (mỗi em một tệp Word).");
+}
+$("cDocAll").onclick = function(){ taiBai(GV.list, "lop"); };
+$("cZip").onclick = function(){ taiBai(GV.list, "zip"); };
 
 /* ---------- Excel ---------- */
 $("cXls").onclick = function(){
