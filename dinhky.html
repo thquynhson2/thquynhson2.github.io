@@ -1179,7 +1179,8 @@ function renderTbl(){
       h += "<td>" + fmtD(mayTL) + "</td><td style='background:#fbf6f1'>" + aiO("claude") + "</td><td style='background:#f3f7fd'>" + aiO("gemini") + "</td>"
         + "<td style='background:#f2faf4'>" + (!f.nViet ? "–" : f.locked ? (function(){ var m = khacChot(st, f); return m ? "<b>" + fmtD(m.tn) + "</b><br><span class='mini' style='color:#c62828'>đã chốt " + fmtD(f.p.III - mayTL) + " – khác!</span>" : fmtD(f.p.III - mayTL); })() : f.chua ? (f.lech ? "<b style='color:#c62828'>⚖️ " + f.lech + " ý lệch</b>" : "<span class='mut'>chờ đủ 2 AI</span>") : "<b>" + fmtD(f.tn) + "</b>") + tbGhi + "</td>";
     }
-    h += "<td>" + (f.locked || !f.chua ? "<b>" + fmtD(f.tong) + "</b>" : "<span class='mut' title='Điểm tạm: phần viết chưa thống nhất đang tính theo máy gợi ý'>" + fmtD(f.tong) + "*</span>") + "</td><td>" + statusHtml(f) + "</td><td>" + (st.b.vp || 0) + (st.b.ly === "roibai" ? " ⚠️" : "") + " <button class='btn ghost sm' data-tai='" + i + "' title='Tải bài của em này (Word)' style='padding:2px 8px'>📄</button></td></tr>";
+    var lt = lamTron(f.tong), ltGhi = Math.abs(lt - f.tong) > 0.001 ? "<br><span class='mini' title='Điểm làm tròn ghi cho học sinh'>→ <b>" + fmtD(lt) + "</b></span>" : "";
+    h += "<td>" + (f.locked || !f.chua ? "<b>" + fmtD(f.tong) + "</b>" + ltGhi : "<span class='mut' title='Điểm tạm: phần viết chưa thống nhất đang tính theo máy gợi ý'>" + fmtD(f.tong) + "*</span>") + "</td><td>" + statusHtml(f) + "</td><td>" + (st.b.vp || 0) + (st.b.ly === "roibai" ? " ⚠️" : "") + " <button class='btn ghost sm' data-tai='" + i + "' title='Tải bài của em này (Word)' style='padding:2px 8px'>📄</button></td></tr>";
   });
   if(!list.length) h += "<tr><td colspan='12' class='mut'>Chưa có bài nộp cho đề này.</td></tr>";
   $("cTbl").innerHTML = h; GV.list = list;
@@ -1323,6 +1324,11 @@ $("cUnlock").onclick = function(){
 /* điểm thống nhất hiện tại của hai AI, bỏ qua lần chốt trước (để phát hiện bài đã chốt mà điểm AI nay khác) */
 function moiOf(st){ return finalOf({ b: st.b, c: null }); }
 function khacChot(st, f){ if(!f.locked) return null; var m = moiOf(st); if(m.chua || !m.nViet) return null; return Math.abs(m.tong - f.tong) > 0.001 ? m : null; }
+/* THCS: làm tròn điểm tổng đến 0,5 (≥ 9,75 → 10; 9,5–9,74 → 9,5; 8–8,24 → 8; 8,25–8,74 → 8,5…)
+   TIỂU HỌC (Thông tư 27): điểm số nguyên, không cho điểm 0, không cho điểm thập phân → làm tròn đến số nguyên (từ ,5 làm tròn lên), thấp nhất 1 */
+function lamTron(x){ x = Math.round((x || 0) * 100) / 100;
+  if(TB_TH) return Math.max(1, Math.min(10, Math.floor(x + 0.5 + 1e-9)));
+  return Math.min(10, Math.floor(x * 2 + 0.5 + 1e-9) / 2); }
 function vOf(f){ var v = {}; Object.keys(f.it).forEach(function(k){ v[k] = f.it[k].d; }); return v; }
 function truOf(f){ return f.tbDu ? f.tb.slice() : [0, 0, 0, 0]; }
 $("cLockAll").onclick = function(){
@@ -1379,6 +1385,7 @@ $("cExport").onclick = function(){
     + "YÊU CẦU DÀNH CHO TRỢ LÝ AI (Claude hoặc Gemini)\n"
     + "Bạn đóng vai giáo viên Tin học tiểu học chấm phần tự luận viết của học sinh lớp " + ex.khoi + " theo đúng HƯỚNG DẪN CHẤM bên dưới.\n"
     + "1. Chấm từng dòng trong mục BÀI LÀM. Mỗi dòng là câu trả lời của một học sinh cho một ý (cau). Không có họ tên học sinh.\n"
+    + (TB_TH ? "LƯU Ý TIỂU HỌC: điểm bài kiểm tra cuối cùng ghi cho học sinh là SỐ NGUYÊN theo thang 10 (Thông tư 27: không cho điểm thập phân, không cho điểm 0). Bạn vẫn chấm từng ý theo bước 0,25 như dưới đây; phần mềm sẽ cộng điểm rồi làm tròn tổng (từ 0,5 làm tròn lên). Chấm công bằng, không cố ý nâng hay hạ điểm để tròn số.\n" : "")
     + "2. Cho điểm NỘI DUNG từng ý từ 0 đến điểm tối đa của ý, theo bước 0,25, đúng theo hướng dẫn chấm (đúng, đủ ý thì cho tối đa của ý; sai, thiếu ý thì trừ theo hướng dẫn). Không trừ điểm trình bày ở bước này.\n"
     + "2a. CHẤM TRÌNH BÀY CHUNG CHO CẢ PHẦN TỰ LUẬN của mỗi học sinh (gộp mọi câu trả lời cùng ma). Mỗi tiêu chí chọn MỘT mức trừ: " + TB_MUC.map(fmtD).join(" / ") + " điểm (tổng trừ tối đa " + fmtD(TB_MAX) + " điểm):\n"
     + "    tc1 – Chính tả, dấu tiếng Việt: " + fmtD(TB_MUC[0]) + " = có dấu đầy đủ, sai không quá 2 lỗi; " + fmtD(TB_MUC[1]) + " = sai 3–5 lỗi hoặc vài chỗ thiếu dấu; " + fmtD(TB_MUC[2]) + " = sai trên 5 lỗi hoặc phần lớn viết không dấu.\n"
@@ -1543,8 +1550,8 @@ function baiHtml(st){
   var dd = function(k){ var x = f.it[k]; return x ? fmtD(x.d) : "0"; };
   h += "<table style='width:100%;border:none'><tr><td style='text-align:center;width:45%'><b>" + esc(TRUONG) + "</b></td><td style='text-align:center'><b>" + esc(ex.ten.toUpperCase()) + "</b><br><i>Năm học 2026 – 2027 · Thời gian: " + ex.tg + " phút</i></td></tr></table>";
   h += "<p style='margin:8px 0'>Họ và tên: <b>" + esc(b.ten) + "</b> &nbsp; · &nbsp; Lớp: <b>" + esc(b.lop) + "</b> &nbsp; · &nbsp; STT: <b>" + b.stt + "</b> &nbsp; · &nbsp; Mã kiểm tra: " + fmtCode(b.ma) + "<br>Nộp lúc: " + new Date(b.kt).toLocaleString("vi-VN") + " &nbsp; · &nbsp; Số lần rời bài: " + (b.vp || 0) + (b.ly === "hetgio" ? " · nộp khi hết giờ" : b.ly === "roibai" ? " · tự nộp do rời bài quá số lần" : "") + "</p>";
-  h += "<table style='border-collapse:collapse;width:100%;margin:6px 0'>" + tr(tnParts(ex).map(function(q){ return q.nm + " (" + fmtD(q.max) + " đ)"; }).concat(ex.phan.filter(function(p){ return p.loai === "tl"; }).map(function(p){ return p.ten.split(".")[0] + " – tự luận (" + fmtD(p.diem) + " đ)"; }), ["TỔNG ĐIỂM", "Trạng thái"]), true)
-    + tr(tnParts(ex).map(function(q){ return fmtD(f.p[q.k]); }).concat(ex.phan.some(function(p){ return p.loai === "tl"; }) ? [fmtD(f.p.III)] : [], ["<b>" + fmtD(f.tong) + " / 10</b>", f.locked ? "Đã chốt" : "Chưa chốt (điểm tạm)"])) + "</table>";
+  h += "<table style='border-collapse:collapse;width:100%;margin:6px 0'>" + tr(tnParts(ex).map(function(q){ return q.nm + " (" + fmtD(q.max) + " đ)"; }).concat(ex.phan.filter(function(p){ return p.loai === "tl"; }).map(function(p){ return p.ten.split(".")[0] + " – tự luận (" + fmtD(p.diem) + " đ)"; }), ["Tổng điểm", TB_TH ? "ĐIỂM (số nguyên)" : "ĐIỂM (làm tròn)", "Trạng thái"]), true)
+    + tr(tnParts(ex).map(function(q){ return fmtD(f.p[q.k]); }).concat(ex.phan.some(function(p){ return p.loai === "tl"; }) ? [fmtD(f.p.III) + (f.tbTru > 0 ? "<br><i style='font-size:9pt'>(đã trừ trình bày " + fmtD(f.tbTru) + ")</i>" : "")] : [], [fmtD(f.tong), "<b style='font-size:13pt'>" + fmtD(lamTron(f.tong)) + " / 10</b>", f.locked ? "Đã chốt" : "Chưa chốt (điểm tạm)"])) + "</table>";
   ex.phan.forEach(function(ph){
     h += "<p style='margin:10px 0 4px'><b>" + esc(ph.ten) + " (" + fmtD(ph.diem) + " điểm)</b></p>";
     if(ph.loai === "mc"){
@@ -1623,14 +1630,14 @@ $("cXls").onclick = function(){
   var h = "<tr><th>Lớp</th><th>STT</th><th>Họ và tên</th>" + tp.map(function(q){ return "<th>" + esc(q.nm) + " (" + fmtD(q.max) + "đ)</th>"; }).join("");
   if(tl) tl.cau.forEach(function(c, i){ h += "<th>TL Câu " + (i + 1) + " (" + fmtD(c.d) + "đ)</th>"; });
   if(tl) h += "<th>Phần viết – Claude</th><th>Phần viết – Gemini</th><th>Trừ trình bày</th>";
-  h += "<th>Tổng điểm</th><th>Biết</th><th>Hiểu</th><th>Vận dụng</th><th>Rời bài</th><th>Trạng thái</th></tr>";
+  h += "<th>Tổng điểm</th><th>" + (TB_TH ? "Điểm (số nguyên)" : "Điểm làm tròn") + "</th><th>Biết</th><th>Hiểu</th><th>Vận dụng</th><th>Rời bài</th><th>Trạng thái</th></tr>";
   list.forEach(function(st){
     var f = finalOf(st);
     h += "<tr><td>" + esc(st.b.lop) + "</td><td>" + st.b.stt + "</td><td>" + esc(st.b.ten) + "</td>" + tp.map(function(q){ return "<td>" + fmtD(f.p[q.k]) + "</td>"; }).join("");
     if(tl) tl.cau.forEach(function(c){ h += "<td>" + fmtD(f.cau[c.id] || 0) + "</td>"; });
     if(tl) ["claude", "gemini"].forEach(function(w){ var a = f.ai[w]; h += "<td>" + (a.n ? fmtD(a.s) + (a.n < f.nViet ? " (" + a.n + "/" + f.nViet + " ý)" : "") : "") + "</td>"; });
     if(tl) h += "<td>" + (f.tbTru ? fmtD(f.tbTru) : "") + "</td>";
-    h += "<td><b>" + fmtD(f.tong) + "</b></td><td>" + fmtD(f.muc.B || 0) + "</td><td>" + fmtD(f.muc.H || 0) + "</td><td>" + fmtD(f.muc.V || 0) + "</td><td>" + (st.b.vp || 0) + "</td><td>" + statusTxt(f) + "</td></tr>";
+    h += "<td><b>" + fmtD(f.tong) + "</b></td><td><b>" + fmtD(lamTron(f.tong)) + "</b></td><td>" + fmtD(f.muc.B || 0) + "</td><td>" + fmtD(f.muc.H || 0) + "</td><td>" + fmtD(f.muc.V || 0) + "</td><td>" + (st.b.vp || 0) + "</td><td>" + statusTxt(f) + "</td></tr>";
   });
   var html = "<html xmlns:x='urn:schemas-microsoft-com:office:excel'><head><meta charset='utf-8'></head><body><h3>" + esc(ex.ten) + ($("cLop").value ? " – Lớp " + esc($("cLop").value) : "") + "</h3><table border='1'>" + h + "</table></body></html>";
   download("BangDiem_" + de + ($("cLop").value ? "_" + $("cLop").value : "") + ".xls", "\ufeff" + html, "application/vnd.ms-excel;charset=utf-8");
