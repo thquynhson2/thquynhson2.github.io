@@ -279,6 +279,7 @@ input.num{width:220px;font-size:1.3em;font-weight:800;text-align:right;border:2p
       <button class="btn sm" id="cImpG" style="background:#2f6fd0">📥 Nhập điểm 🔷 Gemini</button>
       <button class="btn sm" id="cTN" style="background:#c62828">⚖️ Thầy thống nhất các ý lệch</button>
       <button class="btn sm" id="cLockAll">✅ Chốt các bài đã thống nhất</button>
+      <button class="btn ghost sm" id="cUnlock" title="Bỏ chốt các bài đang hiện trong bảng để chấm lại">🔓 Bỏ chốt để chấm lại</button>
       <label class="mini" style="display:flex;align-items:center;gap:6px;padding:4px 10px;border:1px dashed #b9cde4;border-radius:10px;cursor:pointer" title="Bật khi thầy chỉ cho một AI chấm: ý nào mới có điểm của một AI thì lấy luôn điểm đó để chốt. Ý có đủ hai AI vẫn so sánh như bình thường."><input type="checkbox" id="cMot"> Chỉ dùng 1 AI chấm (Claude <i>hoặc</i> Gemini)</label>
       <button class="btn ghost sm" id="cXls">📊 Tải bảng điểm Excel</button>
       <button class="btn sm" id="cZip" title="Mỗi em một tệp Word, tên tệp: STT_Họ và tên_Lớp">🗂️ Tải bài cả lớp (tệp nén .zip)</button>
@@ -1086,7 +1087,8 @@ function students(de, lop){
     if(r.t === "bai" && (!lop || r.lop === lop) && (!ma || r.ma === ma)){ var k = r.lop + "|" + r.stt; if(!bai[k] || r.kt > bai[k].kt){ var n = bai[k] ? bai[k].lan + 1 : 1; bai[k] = r; r.lan = n; } }
     if(r.t === "cham"){ if(!cham[r.phien] || r.luc > cham[r.phien].luc) cham[r.phien] = r; }
   });
-  return Object.keys(bai).map(function(k){ var b = bai[k]; return { b: b, c: cham[b.phien] || null }; })
+  /* bản ghi chốt mới nhất có "bo" = giáo viên đã BỎ CHỐT → bài quay về trạng thái chưa chốt */
+  return Object.keys(bai).map(function(k){ var b = bai[k], c = cham[b.phien] || null; return { b: b, c: c && !c.bo ? c : null, boChot: !!(c && c.bo) }; })
     .sort(function(x, y){ return x.b.lop.localeCompare(y.b.lop) || x.b.stt - y.b.stt; });
 }
 function fillMaSel(){
@@ -1220,9 +1222,10 @@ function openGrade(i){
       h += "</span></div></div>";
     });
   }); });
-  h += "<div class='foot'><span id='gTot' class='big' style='font-size:1.4em'></span><div class='sp'></div><button class='btn ghost' id='gTai'>📄 Tải bài này</button><button class='btn ghost' onclick='dlgClose()'>Đóng</button><button class='btn org' id='gLock'>✅ Chốt điểm bài này</button></div>";
+  h += "<div class='foot'><span id='gTot' class='big' style='font-size:1.4em'></span><div class='sp'></div>" + (f.locked ? "<button class='btn ghost' id='gUnlock' style='color:#c62828'>🔓 Bỏ chốt bài này</button>" : "") + "<button class='btn ghost' id='gTai'>📄 Tải bài này</button><button class='btn ghost' onclick='dlgClose()'>Đóng</button><button class='btn org' id='gLock'>✅ Chốt điểm bài này</button></div>";
   dlg(h, true); updTot();
   $("gTai").onclick = function(){ taiBai([st], "mot"); };
+  if($("gUnlock")) $("gUnlock").onclick = function(){ if(!confirm("Bỏ chốt bài của " + st.b.ten + " để chấm lại? Điểm đã chốt vẫn được lưu lại trong lịch sử trên máy chủ.")) return; boChot([st], false); };
   $("ovBox").querySelectorAll(".qb").forEach(function(q){ q.onclick = function(e){ var b = e.target.closest("button"); if(!b) return;
     if(q.dataset.tru){ GV.edit.tru[q.dataset.tru] = +b.dataset.q; GV.edit.truDoi[q.dataset.tru] = 1; q.querySelectorAll("button").forEach(function(x){ x.classList.toggle("sel", x === b); }); updTot(); return; }
     GV.edit.v[q.dataset.k] = +b.dataset.q; delete GV.edit.chua[q.dataset.k]; q.querySelectorAll("button").forEach(function(x){ x.classList.toggle("sel", x === b); }); updTot(); }; });
@@ -1249,6 +1252,28 @@ function lockOne(st, v, tru){
   return NET.post("dk", [r], true).then(function(d){ if(!d || d.ok === false) throw 0; GV.recs.push(r); toast("✅ Đã chốt điểm " + st.b.ten + ": " + fmtD(r.tong)); })
     .catch(function(){ toast("⚠️ Chưa lưu được điểm lên máy chủ – thử lại."); });
 }
+/* ---------- BỎ CHỐT: ghi thêm một bản ghi "cham" có bo:1 (không xoá lịch sử) ---------- */
+function boChot(list, xoaAI){
+  var rs = list.map(function(st){ return { id: st.b.phien + "-b" + rid(), t: "cham", bo: 1, phien: st.b.phien, de: st.b.de, lop: st.b.lop, stt: st.b.stt, ten: st.b.ten, diem: {}, tong: "", luc: new Date().toISOString() }; });
+  if(!rs.length) return;
+  NET.post("dk", rs, true).then(function(d){
+    if(!d || d.ok === false) throw 0;
+    GV.recs = GV.recs.concat(rs);
+    if(xoaAI){ list.forEach(function(st){ delete GV.ai[st.b.phien]; }); luuAI(); }
+    dlgClose(); renderTbl();
+    toast("🔓 Đã bỏ chốt " + rs.length + " bài." + (xoaAI ? " Đã xoá điểm AI cũ – bấm 📤 Xuất bài để AI chấm lại." : " Có thể nhập lại điểm AI hoặc sửa điểm rồi chốt lại."));
+  }).catch(function(){ toast("⚠️ Chưa lưu được lên máy chủ – thử lại."); });
+}
+$("cUnlock").onclick = function(){
+  var ds = (GV.list || []).filter(function(st){ return finalOf(st).locked; });
+  if(!ds.length){ toast("Không có bài nào đã chốt trong bảng đang hiện."); return; }
+  dlg("<h2>🔓 Bỏ chốt để chấm lại</h2><p>Bỏ chốt <b>" + ds.length + "</b> bài đã chốt đang hiện trong bảng (đề " + esc($("cDe").value) + ($("cLop").value ? ", lớp " + esc($("cLop").value) : ", tất cả các lớp") + ($("cMa").value ? ", mã " + fmtCode($("cMa").value) : "") + ").</p>"
+    + "<p class='mini'>Điểm đã chốt không bị xoá: vẫn còn trong lịch sử trên máy chủ (Google Trang tính / máy chủ phòng máy). Sau khi bỏ chốt, bài quay về trạng thái chưa chốt để thầy chấm lại rồi chốt lại.</p>"
+    + "<label style='display:flex;gap:8px;align-items:center;margin:10px 0'><input type='checkbox' id='ubXoa'> Xoá luôn điểm Claude/Gemini cũ của các bài này (để AI chấm lại từ đầu)</label>"
+    + "<div class='foot'><div class='sp'></div><button class='btn ghost' onclick='dlgClose()'>Huỷ</button><button class='btn org' id='ubGo' style='background:#c62828'>🔓 Bỏ chốt " + ds.length + " bài</button></div>");
+  $("ubGo").onclick = function(){ this.disabled = true; boChot(ds, $("ubXoa").checked); };
+};
+
 /* điểm thống nhất hiện tại của hai AI, bỏ qua lần chốt trước (để phát hiện bài đã chốt mà điểm AI nay khác) */
 function moiOf(st){ return finalOf({ b: st.b, c: null }); }
 function khacChot(st, f){ if(!f.locked) return null; var m = moiOf(st); if(m.chua || !m.nViet) return null; return Math.abs(m.tong - f.tong) > 0.001 ? m : null; }
