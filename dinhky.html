@@ -167,7 +167,7 @@ input.num{width:220px;font-size:1.3em;font-weight:800;text-align:right;border:2p
 
 <!-- ===== 1. VÀO BÀI ===== -->
 <section id="scJoin" class="wrap">
-  <div class="noprint" style="display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end;margin-bottom:6px"><a class="btn ghost sm" id="lkLt" href="luyentap.html" style="text-decoration:none">📚 Luyện tập</a><a class="btn ghost sm" id="lkKt" href="index.html" style="text-decoration:none">📝 Kiểm tra theo bài</a></div>
+  <div class="noprint" style="display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end;margin-bottom:6px"><a class="btn ghost sm" id="lkLt" href="index.html" style="text-decoration:none">📚 Luyện tập</a><a class="btn ghost sm" id="lkKt" href="kiemtra.html" style="text-decoration:none">📝 Kiểm tra theo bài</a></div>
   <div class="hero">
     <div class="logo">📝</div>
     <div style="flex:1"><h1>Kiểm tra định kỳ – Tin học tiểu học</h1><div class="mut">Trắc nghiệm · Đúng/Sai · Tự luận — làm trực tiếp trên máy</div></div>
@@ -1166,7 +1166,8 @@ function renderTbl(){
   var list = students(de, lop), tl = ex.phan.filter(function(p){ return p.loai === "tl"; })[0];
   var tp = tnParts(ex);
   var h = "<tr><th>Lớp</th><th>STT</th><th class='l'>Họ và tên</th>" + tp.map(function(q){ return "<th>" + esc(q.nm) + "<br><span class='mini'>/" + fmtD(q.max) + "</span></th>"; }).join("");
-  if(tl) h += "<th>Tự luận<br><span class='mini'>máy chấm</span></th><th style='background:#f6ece4'>🟠 Claude <button class='xai' data-xai='claude' title='Xoá điểm Claude của tất cả bài đang hiện'>✕</button><br><span class='mini'>phần viết</span></th><th style='background:#e6eefc'>🔷 Gemini <button class='xai' data-xai='gemini' title='Xoá điểm Gemini của tất cả bài đang hiện'>✕</button><br><span class='mini'>phần viết</span></th><th style='background:#e7f6ec'>🤝 Thống nhất<br><span class='mini'>phần viết</span></th>";
+  var coMay = true;   /* luôn tách cột "Tự luận máy chấm" (ý ghi số, chọn, đánh dấu, bỏ trống) – cả bản web và phòng máy */
+  if(tl) h += (coMay ? "<th>Tự luận<br><span class='mini'>máy chấm</span></th>" : "") + "<th style='background:#f6ece4'>🟠 Claude <button class='xai' data-xai='claude' title='Xoá điểm Claude của tất cả bài đang hiện'>✕</button><br><span class='mini'>phần viết</span></th><th style='background:#e6eefc'>🔷 Gemini <button class='xai' data-xai='gemini' title='Xoá điểm Gemini của tất cả bài đang hiện'>✕</button><br><span class='mini'>phần viết</span></th><th style='background:#e7f6ec'>🤝 Thống nhất<br><span class='mini'>" + (coMay ? "phần viết" : "điểm tự luận") + "</span></th>";
   h += "<th>Tổng<br><span class='mini'>/10</span></th><th>Trạng thái</th><th>Rời bài</th></tr>";
   var nk = 0, nw = 0, nl = 0, nr = 0;
   list.forEach(function(st, i){
@@ -1176,8 +1177,9 @@ function renderTbl(){
       var mayTL = 0; Object.keys(st.b.may.it).forEach(function(k){ var x = st.b.may.it[k]; if(x.phan === "III" && x.sure) mayTL += f.it[k].d; });
       var aiO = function(w){ var a = f.ai[w]; return !f.nViet ? "–" : !a.n ? "<span class='mut'>chưa chấm</span>" : fmtD(a.s) + (a.n < f.nViet ? " <span class='mini'>(" + a.n + "/" + f.nViet + " ý)</span>" : "") + " <button class='xai' data-xai='" + w + "' data-i='" + i + "' title='Xoá điểm " + (w === "claude" ? "Claude" : "Gemini") + " của em này'>✕</button>"; };
       var tbGhi = f.tbTru > 0 ? "<br><span class='mini' style='color:#8a1c1c'>đã trừ trình bày " + fmtD(f.tbTru) + "</span>" : "";
-      h += "<td>" + fmtD(mayTL) + "</td><td style='background:#fbf6f1'>" + aiO("claude") + "</td><td style='background:#f3f7fd'>" + aiO("gemini") + "</td>"
-        + "<td style='background:#f2faf4'>" + (!f.nViet ? "–" : f.locked ? (function(){ var m = khacChot(st, f); return m ? "<b>" + fmtD(m.tn) + "</b><br><span class='mini' style='color:#c62828'>đã chốt " + fmtD(f.p.III - mayTL) + " – khác!</span>" : fmtD(f.p.III - mayTL); })() : f.chua ? (f.lech ? "<b style='color:#c62828'>⚖️ " + f.lech + " ý lệch</b>" : "<span class='mut'>chờ đủ 2 AI</span>") : "<b>" + fmtD(f.tn) + "</b>") + tbGhi + "</td>";
+      var cg = coMay ? 0 : mayTL;   /* bản web: cộng phần máy chấm vào cột Thống nhất */
+      h += (coMay ? "<td>" + fmtD(mayTL) + "</td>" : "") + "<td style='background:#fbf6f1'>" + aiO("claude") + "</td><td style='background:#f3f7fd'>" + aiO("gemini") + "</td>"
+        + "<td style='background:#f2faf4'>" + (!f.nViet ? "–" : f.locked ? (function(){ var m = khacChot(st, f); return m ? "<b>" + fmtD(m.tn + cg) + "</b><br><span class='mini' style='color:#c62828'>đã chốt " + fmtD(f.p.III - mayTL + cg) + " – khác!</span>" : fmtD(f.p.III - mayTL + cg); })() : f.chua ? (f.lech ? "<b style='color:#c62828'>⚖️ " + f.lech + " ý lệch</b>" : "<span class='mut'>chờ đủ 2 AI</span>") : "<b>" + fmtD(f.tn + cg) + "</b>") + tbGhi + "</td>";
     }
     var rr = truRoi(f.tong, st.b.vp), lt = diemGhi(f.tong, st.b.vp), ltGhi = Math.abs(lt - f.tong) > 0.001 ? "<br><span class='mini' title='Điểm làm tròn ghi cho học sinh" + (rr ? " (đã trừ " + fmtD(rr) + " vì rời bài " + st.b.vp + " lần)" : "") + "'>→ <b>" + fmtD(lt) + "</b>" + (rr ? " <span style='color:#c62828'>(rời bài −" + fmtD(rr) + ")</span>" : "") + "</span>" : "";
     h += "<td>" + (f.locked || !f.chua ? "<b>" + fmtD(f.tong) + "</b>" + ltGhi : "<span class='mut' title='Điểm tạm: phần viết chưa thống nhất đang tính theo máy gợi ý'>" + fmtD(f.tong) + "*</span>") + "</td><td>" + statusHtml(f) + "</td><td>" + (st.b.vp || 0) + (st.b.ly === "roibai" ? " ⚠️" : "") + " <button class='btn ghost sm' data-tai='" + i + "' title='Tải bài của em này (Word)' style='padding:2px 8px'>📄</button></td></tr>";
@@ -1456,10 +1458,21 @@ function nhapAI(only){
     $("imOk").disabled = !c && !g;
     $("imSum").innerHTML = "";
   }
+  /* mã bài AI trả về phải khớp đúng mã bài trong danh sách; AI chép sai vài kí tự thì tự sửa về mã gần nhất (lệch ≤ 2 kí tự, duy nhất) */
+  var maBiet = {}; (GV.list || []).forEach(function(st){ maBiet[st.b.phien] = 1; }); Object.keys(deCua).forEach(function(m){ maBiet[m] = 1; });
+  var dsMa = (GV.list || []).map(function(st){ return st.b.phien; });
+  function kc(a, b){ if(Math.abs(a.length - b.length) > 2) return 9; var d = []; for(var i = 0; i <= a.length; i++){ d[i] = [i]; } for(var j = 1; j <= b.length; j++) d[0][j] = j;
+    for(i = 1; i <= a.length; i++) for(j = 1; j <= b.length; j++) d[i][j] = Math.min(d[i-1][j] + 1, d[i][j-1] + 1, d[i-1][j-1] + (a[i-1] === b[j-1] ? 0 : 1)); return d[a.length][b.length]; }
+  function suaMaAI(m){ m = m.replace(/[^0-9a-z]/gi, ""); if(maBiet[m]) return m;
+    var best = null, bd = 3, hai = false; dsMa.forEach(function(p){ var d = kc(m, p); if(d < bd){ bd = d; best = p; hai = false; } else if(d === bd) hai = true; });
+    return best && !hai ? best : null; }
   function rec(w){
     var arr = parse($("imTx_" + w).value), ok = [], bad = 0;
     if(!arr){ $("imSt_" + w).className = "st w"; $("imSt_" + w).style.cssText = "background:#fdecec;color:#c62828"; $("imSt_" + w).textContent = "❌ không đọc được – dán lại cả khối JSON"; got[w] = null; upd(); return; }
-    var seen = {}, nTru = 0;
+    var seen = {}, nTru = 0, lechMa = 0, suaMa = 0, baiCo = {};
+    arr.forEach(function(x){ if(!x || !x.ma) return; var m = suaMaAI(String(x.ma));
+      if(m == null){ x.ma = null; lechMa++; return; } if(m !== x.ma) suaMa++; x.ma = m; baiCo[m] = 1; });
+    arr = arr.filter(function(x){ return x && x.ma; });
     arr.forEach(function(x){
       if(x && x.tb){   /* trừ trình bày chung cả phần tự luận: 4 tiêu chí */
         if(!deCua[x.ma] && !Object.keys(need).some(function(k){ return k.indexOf(x.ma + "|") === 0; })){ bad++; return; }
@@ -1476,9 +1489,19 @@ function nhapAI(only){
     if(lienQuan) Object.keys(need).forEach(function(k){ if(!coMa[k]) thieu++; });
     got[w] = ok.length ? ok : null;
     var st = $("imSt_" + w); st.style.cssText = ""; st.className = ok.length ? (thieu ? "st w" : "st k") : "st w";
-    st.textContent = ok.length ? "✅ đã ghi nhận " + ok.length + " điểm" + (bad ? " (bỏ " + bad + " dòng lỗi/bị cắt)" : "") + (nTru ? " · " + nTru + " bài bị trừ trình bày" : "") : "chưa có điểm hợp lệ";
+    st.textContent = ok.length ? "✅ đã ghi nhận " + ok.length + " điểm của " + Object.keys(baiCo).length + "/" + dsMa.length + " bài" + (bad ? " (bỏ " + bad + " dòng lỗi/bị cắt)" : "") + (nTru ? " · " + nTru + " bài bị trừ trình bày" : "") : "chưa có điểm hợp lệ";
+    if(suaMa) st.textContent += " · tự sửa " + suaMa + " mã AI chép sai";
+    if(lechMa){ st.textContent += " · ⚠️ " + lechMa + " dòng có mã bài KHÔNG KHỚP bài nào của lớp đang chọn (đã bỏ) – kiểm tra đúng lớp/đúng đề, hoặc AI đã chép sai mã"; st.className = "st w"; }
     if(thieu){ st.textContent += " · còn thiếu " + thieu + " ý"; st.title = "AI chưa trả lời hết. Gõ “tiếp tục” cho AI, sao chép phần trả lời tiếp theo rồi dán NỐI vào cuối ô này."; }
     upd();
+    if(ok.length) luuNgay(w);   /* lưu NGAY khi đọc được – không phụ thuộc nút Chấp nhận */
+  }
+  function luuNgay(w){
+    var n = 0;
+    (got[w] || []).forEach(function(x){ var A = ((GV.ai[x.ma] = GV.ai[x.ma] || {})[x.cau] = GV.ai[x.ma][x.cau] || {}); A[w] = x.t ? { t: x.t, ly: x.ly } : { d: x.d, ly: x.ly }; if(A.gv && !x.t) delete A.gv; n++; });
+    luuAI(); try{ renderTbl(); }catch(e){ console.error(e); }
+    var st = $("imSt_" + w); if(st && n) st.textContent += " · ĐÃ LƯU vào bảng";
+    return n;
   }
   [only].forEach(function(w){
     var t = $("imTx_" + w);
@@ -1488,9 +1511,8 @@ function nhapAI(only){
   });
   setTimeout(function(){ $("imTx_" + only).focus(); }, 50);
   $("imOk").onclick = function(){
-    var n = 0;
-    [only].forEach(function(w){ (got[w] || []).forEach(function(x){ var A = ((GV.ai[x.ma] = GV.ai[x.ma] || {})[x.cau] = GV.ai[x.ma][x.cau] || {}); A[w] = x.t ? { t: x.t, ly: x.ly } : { d: x.d, ly: x.ly }; if(A.gv && !x.t) delete A.gv; n++; }); });
-    luuAI(); dlgClose(); renderTbl();
+    var n = luuNgay(only);
+    dlgClose(); renderTbl();
     var dong = 0, lech = 0;
     Object.keys(GV.ai).forEach(function(m){ Object.keys(GV.ai[m]).forEach(function(k){ if(/^(TRU_|TB$)/.test(k)) return; var p = aiPick(GV.ai[m][k]); if(p && p.n === 2){ if(p.ok) dong++; else lech++; } }); });
     toast("✅ Đã nhận " + n + " điểm của " + (only === "claude" ? "Claude" : "Gemini") + ". " + (GV.motAI && !(dong + lech) ? "Đang dùng chế độ 1 AI – có thể bấm ✅ Chốt ngay" : dong + lech ? dong + " ý hai AI thống nhất" + (lech ? ", " + lech + " ý lệch từ 0,75 điểm – bấm ⚖️ để thầy thống nhất" : "") : "Chờ nhập điểm của " + (only === "claude" ? "Gemini" : "Claude") + " để thống nhất") + ".");
@@ -1627,24 +1649,95 @@ $("cDocAll").onclick = function(){ taiBai(GV.list, "lop"); };
 $("cZip").onclick = function(){ taiBai(GV.list, "zip"); };
 
 /* ---------- Excel ---------- */
+/* ---------- BẢNG ĐIỂM EXCEL (.xlsx thật, có CÔNG THỨC: sửa điểm thành phần thì tổng & điểm làm tròn tự cập nhật) ---------- */
+function xlsxBlob(rows, opt){
+  /* rows: mảng hàng; mỗi ô: null | số | chuỗi | {v, s} | {f: "công thức", v: giá trị tạm, s} ; s: 0 thường, 1 tiêu đề, 2 công thức, 3 tiêu đề lớn, 4 ô nhập */
+  var X = function(t){ return String(t).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&apos;"); };
+  var col = function(i){ var s = ""; i++; while(i){ var m = (i - 1) % 26; s = String.fromCharCode(65 + m) + s; i = Math.floor((i - 1) / 26); } return s; };
+  var sd = rows.map(function(r, ri){
+    return "<row r='" + (ri + 1) + "'>" + r.map(function(c, ci){
+      if(c == null || c === "") return "";
+      var ref = col(ci) + (ri + 1), o = typeof c === "object" ? c : { v: c }, s = o.s ? " s='" + o.s + "'" : "";
+      if(o.f) return "<c r='" + ref + "'" + s + "><f>" + X(o.f) + "</f>" + (typeof o.v === "number" ? "<v>" + o.v + "</v>" : "") + "</c>";
+      if(typeof o.v === "number") return "<c r='" + ref + "'" + s + "><v>" + o.v + "</v></c>";
+      return "<c r='" + ref + "'" + s + " t='inlineStr'><is><t xml:space='preserve'>" + X(o.v) + "</t></is></c>";
+    }).join("") + "</row>";
+  }).join("");
+  var cols = "<cols>" + (opt.w || []).map(function(w, i){ return "<col min='" + (i + 1) + "' max='" + (i + 1) + "' width='" + w + "' customWidth='1'/>"; }).join("") + "</cols>";
+  var sheet = "<?xml version='1.0' encoding='UTF-8' standalone='yes'?><worksheet xmlns='http://schemas.openxmlformats.org/spreadsheetml/2006/main'>"
+    + "<sheetViews><sheetView workbookViewId='0'><pane xSplit='3' ySplit='" + (opt.frz || 0) + "' topLeftCell='D" + ((opt.frz || 0) + 1) + "' activePane='bottomRight' state='frozen'/></sheetView></sheetViews>"
+    + cols + "<sheetData>" + sd + "</sheetData>" + (opt.merge ? "<mergeCells count='" + opt.merge.length + "'>" + opt.merge.map(function(m){ return "<mergeCell ref='" + m + "'/>"; }).join("") + "</mergeCells>" : "") + "</worksheet>";
+  var styles = "<?xml version='1.0' encoding='UTF-8' standalone='yes'?><styleSheet xmlns='http://schemas.openxmlformats.org/spreadsheetml/2006/main'>"
+    + "<fonts count='3'><font><sz val='11'/><name val='Times New Roman'/></font><font><b/><sz val='11'/><name val='Times New Roman'/></font><font><b/><sz val='14'/><name val='Times New Roman'/></font></fonts>"
+    + "<fills count='5'><fill><patternFill patternType='none'/></fill><fill><patternFill patternType='gray125'/></fill><fill><patternFill patternType='solid'><fgColor rgb='FFDCE6F1'/></patternFill></fill><fill><patternFill patternType='solid'><fgColor rgb='FFE2F0D9'/></patternFill></fill><fill><patternFill patternType='solid'><fgColor rgb='FFFFF2CC'/></patternFill></fill></fills>"
+    + "<borders count='2'><border/><border><left style='thin'/><right style='thin'/><top style='thin'/><bottom style='thin'/></border></borders>"
+    + "<cellStyleXfs count='1'><xf/></cellStyleXfs><cellXfs count='5'>"
+    + "<xf fontId='0' borderId='1' applyBorder='1'/>"
+    + "<xf fontId='1' fillId='2' borderId='1' applyFont='1' applyFill='1' applyBorder='1' applyAlignment='1'><alignment horizontal='center' vertical='center' wrapText='1'/></xf>"
+    + "<xf fontId='1' fillId='3' borderId='1' applyFont='1' applyFill='1' applyBorder='1'/>"
+    + "<xf fontId='2' applyFont='1'/>"
+    + "<xf fontId='0' fillId='4' borderId='1' applyFill='1' applyBorder='1'/>"
+    + "</cellXfs><cellStyles count='1'><cellStyle name='Normal' xfId='0' builtinId='0'/></cellStyles></styleSheet>";
+  var Q = function(fs){ return fs.map(function(f){ return { name: f.name, text: f.text.replace(/'/g, '"') }; }); };   /* thuộc tính XML dùng nháy kép cho Excel */
+  return zipFiles(Q([
+    { name: "[Content_Types].xml", text: "<?xml version='1.0' encoding='UTF-8' standalone='yes'?><Types xmlns='http://schemas.openxmlformats.org/package/2006/content-types'><Default Extension='rels' ContentType='application/vnd.openxmlformats-package.relationships+xml'/><Default Extension='xml' ContentType='application/xml'/><Override PartName='/xl/workbook.xml' ContentType='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml'/><Override PartName='/xl/worksheets/sheet1.xml' ContentType='application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml'/><Override PartName='/xl/styles.xml' ContentType='application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml'/></Types>" },
+    { name: "_rels/.rels", text: "<?xml version='1.0' encoding='UTF-8' standalone='yes'?><Relationships xmlns='http://schemas.openxmlformats.org/package/2006/relationships'><Relationship Id='rId1' Type='http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument' Target='xl/workbook.xml'/></Relationships>" },
+    { name: "xl/workbook.xml", text: "<?xml version='1.0' encoding='UTF-8' standalone='yes'?><workbook xmlns='http://schemas.openxmlformats.org/spreadsheetml/2006/main' xmlns:r='http://schemas.openxmlformats.org/officeDocument/2006/relationships'><sheets><sheet name='" + X(opt.ten || "BangDiem") + "' sheetId='1' r:id='rId1'/></sheets><calcPr calcId='191029' fullCalcOnLoad='1'/></workbook>" },
+    { name: "xl/_rels/workbook.xml.rels", text: "<?xml version='1.0' encoding='UTF-8' standalone='yes'?><Relationships xmlns='http://schemas.openxmlformats.org/package/2006/relationships'><Relationship Id='rId1' Type='http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet' Target='worksheets/sheet1.xml'/><Relationship Id='rId2' Type='http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles' Target='styles.xml'/></Relationships>" },
+    { name: "xl/styles.xml", text: styles },
+    { name: "xl/worksheets/sheet1.xml", text: sheet }
+  ]));
+}
 $("cXls").onclick = function(){
-  var de = $("cDe").value, ex = examOf(de), tl = ex.phan.filter(function(p){ return p.loai === "tl"; })[0], list = GV.list || [];
-  var tp = tnParts(ex);
-  var h = "<tr><th>Lớp</th><th>STT</th><th>Họ và tên</th>" + tp.map(function(q){ return "<th>" + esc(q.nm) + " (" + fmtD(q.max) + "đ)</th>"; }).join("");
-  if(tl) tl.cau.forEach(function(c, i){ h += "<th>TL Câu " + (i + 1) + " (" + fmtD(c.d) + "đ)</th>"; });
-  if(tl) h += "<th>Phần viết – Claude</th><th>Phần viết – Gemini</th><th>Trừ trình bày</th>";
-  h += "<th>Tổng điểm</th><th>Trừ rời bài (bài đạt 10)</th><th>" + (TB_TH ? "Điểm (số nguyên)" : "Điểm làm tròn") + "</th><th>Biết</th><th>Hiểu</th><th>Vận dụng</th><th>Rời bài</th><th>Trạng thái</th></tr>";
-  list.forEach(function(st){
-    var f = finalOf(st);
-    h += "<tr><td>" + esc(st.b.lop) + "</td><td>" + st.b.stt + "</td><td>" + esc(st.b.ten) + "</td>" + tp.map(function(q){ return "<td>" + fmtD(f.p[q.k]) + "</td>"; }).join("");
-    if(tl) tl.cau.forEach(function(c){ h += "<td>" + fmtD(f.cau[c.id] || 0) + "</td>"; });
-    if(tl) ["claude", "gemini"].forEach(function(w){ var a = f.ai[w]; h += "<td>" + (a.n ? fmtD(a.s) + (a.n < f.nViet ? " (" + a.n + "/" + f.nViet + " ý)" : "") : "") + "</td>"; });
-    if(tl) h += "<td>" + (f.tbTru ? fmtD(f.tbTru) : "") + "</td>";
-    var rrx = truRoi(f.tong, st.b.vp);
-    h += "<td><b>" + fmtD(f.tong) + "</b></td><td>" + (rrx ? fmtD(rrx) + " (rời " + st.b.vp + " lần)" : "") + "</td><td><b>" + fmtD(diemGhi(f.tong, st.b.vp)) + "</b></td><td>" + fmtD(f.muc.B || 0) + "</td><td>" + fmtD(f.muc.H || 0) + "</td><td>" + fmtD(f.muc.V || 0) + "</td><td>" + (st.b.vp || 0) + "</td><td>" + statusTxt(f) + "</td></tr>";
+  var de = $("cDe").value, ex = examOf(de), tl = ex.phan.filter(function(p){ return p.loai === "tl"; })[0], list = (GV.list || []).slice();
+  if(!list.length){ toast("Chưa có bài nào – thầy chọn đề, lớp rồi bấm 🔄 Tải bài mới."); return; }
+  list.sort(function(x, y){ return String(x.b.lop).localeCompare(String(y.b.lop)) || (+x.b.stt || 0) - (+y.b.stt || 0); });
+  var tp = tnParts(ex), cau = tl ? tl.cau : [];
+  var col = function(i){ var s = ""; i++; while(i){ var m = (i - 1) % 26; s = String.fromCharCode(65 + m) + s; i = Math.floor((i - 1) / 26); } return s; };
+  /* vị trí cột */
+  var c0 = 3, cP = c0, cC = cP + tp.length, cTB = cC + cau.length, cAI = cTB + 1, cTong = cAI + (tl ? 2 : 0), cVp = cTong + 1, cRR = cVp + 1, cLT = cRR + 1, cB = cLT + 1;
+  var H = [{ v: "Lớp", s: 1 }, { v: "STT", s: 1 }, { v: "Họ và tên", s: 1 }];
+  tp.forEach(function(q){ H[cP + tp.indexOf(q)] = { v: q.nm + " (" + fmtD(q.max) + "đ)", s: 1 }; });
+  cau.forEach(function(c, i){ H[cC + i] = { v: "TL Câu " + (i + 1) + " (" + fmtD(c.d) + "đ)", s: 1 }; });
+  H[cTB] = { v: "Trừ trình bày (tối đa " + fmtD(TB_MAX) + ")", s: 1 };
+  if(tl){ H[cAI] = { v: "Phần viết – Claude (tham khảo)", s: 1 }; H[cAI + 1] = { v: "Phần viết – Gemini (tham khảo)", s: 1 }; }
+  H[cTong] = { v: "TỔNG ĐIỂM (công thức)", s: 1 }; H[cVp] = { v: "Số lần rời bài", s: 1 }; H[cRR] = { v: "Trừ rời bài – bài đạt 10 (công thức)", s: 1 };
+  H[cLT] = { v: (TB_TH ? "ĐIỂM SỐ NGUYÊN" : "ĐIỂM LÀM TRÒN") + " (công thức)", s: 1 };
+  H[cB] = { v: "Biết", s: 1 }; H[cB + 1] = { v: "Hiểu", s: 1 }; H[cB + 2] = { v: "Vận dụng", s: 1 }; H[cB + 3] = { v: "Trạng thái", s: 1 };
+  var nCol = cB + 4, rows = [], tieuDe = ex.ten + ($("cLop").value ? " – Lớp " + $("cLop").value : "") + " – " + TRUONG;
+  rows.push([{ v: tieuDe, s: 3 }]); rows.push([{ v: "Ô nền vàng: điểm thành phần, thầy sửa được. Ô nền xanh: công thức tự tính (Tổng = Phần I + Phần II + các câu tự luận − trừ trình bày; bài đạt 10 mà rời bài thì mỗi lần −0,25; rồi làm tròn " + (TB_TH ? "đến số nguyên, thấp nhất 1)." : "đến 0,5).") }]);
+  rows.push(H);
+  var r0 = rows.length;
+  var thr = TB_TH ? 9.5 : 9.75;
+  list.forEach(function(st, k){
+    var f = finalOf(st), r = r0 + k + 1, R = [], A = function(i){ return col(i) + r; };
+    R[0] = { v: String(st.b.lop) }; R[1] = { v: +st.b.stt || 0 }; R[2] = { v: String(st.b.ten) };
+    tp.forEach(function(q, i){ R[cP + i] = { v: Math.round((f.p[q.k] || 0) * 100) / 100, s: 4 }; });
+    cau.forEach(function(c, i){ R[cC + i] = { v: Math.round((f.cau[c.id] || 0) * 100) / 100, s: 4 }; });
+    R[cTB] = { v: Math.round((f.tbTru || 0) * 100) / 100, s: 4 };
+    if(tl) ["claude", "gemini"].forEach(function(w, j){ var a = f.ai[w]; R[cAI + j] = a.n ? { v: Math.round(a.s * 100) / 100 } : { v: "" }; });
+    var sumP = tp.length ? "SUM(" + A(cP) + ":" + A(cP + tp.length - 1) + ")" : "0", sumC = cau.length ? "+SUM(" + A(cC) + ":" + A(cC + cau.length - 1) + ")" : "";
+    R[cTong] = { f: "ROUND(" + sumP + sumC + "-" + A(cTB) + ",2)", v: Math.round(f.tong * 100) / 100, s: 2 };
+    R[cVp] = { v: +st.b.vp || 0, s: 4 };
+    R[cRR] = { f: "IF(AND(" + A(cVp) + ">0," + A(cTong) + ">=" + thr + "),MIN(" + A(cTong) + ",0.25*" + A(cVp) + "),0)", v: truRoi(f.tong, st.b.vp), s: 2 };
+    var x = "ROUND(" + A(cTong) + "-" + A(cRR) + ",2)";
+    R[cLT] = { f: TB_TH ? "MAX(1,MIN(10,INT(" + x + "+0.5)))" : "MIN(10,INT(" + x + "*2+0.5)/2)", v: diemGhi(f.tong, st.b.vp), s: 2 };
+    R[cB] = { v: Math.round((f.muc.B || 0) * 100) / 100 }; R[cB + 1] = { v: Math.round((f.muc.H || 0) * 100) / 100 }; R[cB + 2] = { v: Math.round((f.muc.V || 0) * 100) / 100 };
+    R[cB + 3] = { v: statusTxt(f) };
+    for(var i = 0; i < nCol; i++) if(R[i] == null) R[i] = { v: "" };
+    rows.push(R);
   });
-  var html = "<html xmlns:x='urn:schemas-microsoft-com:office:excel'><head><meta charset='utf-8'></head><body><h3>" + esc(ex.ten) + ($("cLop").value ? " – Lớp " + esc($("cLop").value) : "") + "</h3><table border='1'>" + h + "</table></body></html>";
-  download("BangDiem_" + de + ($("cLop").value ? "_" + $("cLop").value : "") + ".xls", "\ufeff" + html, "application/vnd.ms-excel;charset=utf-8");
+  /* hàng thống kê */
+  var rA = r0 + 1, rZ = r0 + list.length, TK = [];
+  TK[2] = { v: "Điểm trung bình", s: 1 };
+  TK[cLT] = { f: "ROUND(AVERAGE(" + col(cLT) + rA + ":" + col(cLT) + rZ + "),2)", s: 2 };
+  TK[cTong] = { f: "ROUND(AVERAGE(" + col(cTong) + rA + ":" + col(cTong) + rZ + "),2)", s: 2 };
+  rows.push([]); rows.push(TK);
+  var w = []; for(var i = 0; i < nCol; i++) w[i] = 11; w[0] = 7; w[1] = 6; w[2] = 26; w[cTB] = 12; w[cTong] = 12; w[cRR] = 14; w[cLT] = 13; w[cB + 3] = 22;
+  var blob = xlsxBlob(rows, { w: w, frz: r0, ten: "Bang diem", merge: ["A1:" + col(nCol - 1) + "1", "A2:" + col(nCol - 1) + "2"] });
+  var a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = "BangDiem_" + khongDau(de) + ($("cLop").value ? "_" + khongDau($("cLop").value) : "") + ".xlsx";
+  document.body.appendChild(a); a.click(); setTimeout(function(){ URL.revokeObjectURL(a.href); a.remove(); }, 1500);
+  toast("📊 Đã tải bảng điểm Excel – có công thức, sửa điểm thành phần là tổng và điểm làm tròn tự cập nhật.");
 };
 </script>
 </body>
